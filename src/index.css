@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    overflow-x: clip;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased selection:bg-slate-600 selection:text-white;
+    margin: 0;
+    min-width: 0;
+    overflow-x: clip;
+  }
+
+  #root {
+    min-width: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  img,
+  video {
+    max-width: 100%;
+    height: auto;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    min-width: 0;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-thin-none::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes scroll-left {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes scroll-right {
+  0% {
+    transform: translateX(-50%);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+.animate-scroll-left {
+  animation: scroll-left 40s linear infinite;
+  width: max-content;
+}
+
+.animate-scroll-right {
+  animation: scroll-right 40s linear infinite;
+  width: max-content;
+}

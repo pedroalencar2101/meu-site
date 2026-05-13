@@ -1,0 +1,188 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function postAuthor(postId) {
+      return get(/databases/$(database)/documents/posts/$(postId)).data.authorId;
+    }
+
+    function postCountersOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['likeCount', 'dislikeCount', 'commentCount']);
+    }
+
+    function postImmutableOnCounterUpdate() {
+      return request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.authorName == resource.data.authorName
+        && request.resource.data.authorInitials == resource.data.authorInitials
+        && request.resource.data.authorAvatar == resource.data.authorAvatar
+        && request.resource.data.content == resource.data.content
+        && request.resource.data.movie == resource.data.movie;
+    }
+
+    function commentCountersOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['likeCount', 'dislikeCount']);
+    }
+
+    function commentImmutableOnCounterUpdate() {
+      return request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.authorName == resource.data.authorName
+        && request.resource.data.authorInitials == resource.data.authorInitials
+        && request.resource.data.text == resource.data.text;
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create, update: if isUser(userId);
+      allow delete: if isUser(userId);
+    }
+
+    match /posts/{postId} {
+      allow read: if signedIn();
+
+      // Criação: campos iguais ao createPost() em feedPosts.ts (movie pode ser null)
+      allow create: if signedIn()
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.authorName is string
+        && request.resource.data.authorInitials is string
+        && (request.resource.data.authorAvatar == null || request.resource.data.authorAvatar is string)
+        && request.resource.data.content is string
+        && request.resource.data.content.size() > 0
+        && request.resource.data.content.size() <= 8000
+        && (request.resource.data.movie == null || request.resource.data.movie is map)
+        && request.resource.data.likeCount == 0
+        && request.resource.data.dislikeCount == 0
+        && request.resource.data.commentCount == 0
+        && request.resource.data.keys().hasAll([
+          'authorId', 'authorName', 'authorInitials', 'authorAvatar', 'content',
+          'movie', 'likeCount', 'dislikeCount', 'commentCount', 'createdAt'
+        ]);
+
+      allow update: if signedIn() && postCountersOnly() && postImmutableOnCounterUpdate();
+
+      allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+
+      match /reactions/{uid} {
+        allow read: if signedIn();
+        allow create, update: if isUser(uid)
+          && request.resource.data.keys().hasAll(['type', 'updatedAt'])
+          && request.resource.data.type in ['like', 'dislike'];
+        allow delete: if isUser(uid);
+      }
+
+      match /comments/{commentId} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.authorName is string
+          && request.resource.data.authorInitials is string
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 4000
+          && request.resource.data.likeCount == 0
+          && request.resource.data.dislikeCount == 0
+          && request.resource.data.keys().hasAll([
+            'authorId', 'authorName', 'authorInitials', 'text',
+            'likeCount', 'dislikeCount', 'createdAt'
+          ]);
+
+        allow update: if signedIn() && commentCountersOnly() && commentImmutableOnCounterUpdate();
+
+        allow delete: if signedIn() && (
+          resource.data.authorId == request.auth.uid
+          || postAuthor(postId) == request.auth.uid
+        );
+
+        match /reactions/{uid} {
+          allow read: if signedIn();
+          allow create, update: if isUser(uid)
+            && request.resource.data.keys().hasAll(['type', 'updatedAt'])
+            && request.resource.data.type in ['like', 'dislike'];
+          allow delete: if isUser(uid);
+        }
+      }
+    }
+
+    match /follows/{followId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && followId == request.auth.uid + '_' + request.resource.data.followingId
+        && request.resource.data.followerId == request.auth.uid
+        && request.resource.data.followingId is string
+        && request.resource.data.followingId != request.auth.uid
+        && request.resource.data.keys().hasAll(['followerId', 'followingId', 'createdAt']);
+
+      allow delete: if signedIn() && resource.data.followerId == request.auth.uid;
+
+      allow update: if false;
+    }
+
+    match /movieReviews/{reviewId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && reviewId == string(request.resource.data.tmdbId) + '_' + request.auth.uid
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.tmdbId is int
+        && request.resource.data.stars is int
+        && request.resource.data.stars >= 1
+        && request.resource.data.stars <= 5
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 2000
+        && request.resource.data.authorName is string
+        && request.resource.data.authorInitials is string
+        && (request.resource.data.authorAvatar == null || request.resource.data.authorAvatar is string)
+        && request.resource.data.keys().hasAll([
+          'tmdbId', 'authorId', 'authorName', 'authorInitials', 'authorAvatar',
+          'stars', 'text', 'createdAt', 'updatedAt'
+        ]);
+
+      allow update: if signedIn()
+        && resource.data.authorId == request.auth.uid
+        && reviewId == string(request.resource.data.tmdbId) + '_' + request.auth.uid
+        && request.resource.data.tmdbId == resource.data.tmdbId
+        && request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.stars is int
+        && request.resource.data.stars >= 1
+        && request.resource.data.stars <= 5
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 2000
+        && request.resource.data.authorName is string
+        && request.resource.data.authorInitials is string
+        && (request.resource.data.authorAvatar == null || request.resource.data.authorAvatar is string)
+        && request.resource.data.keys().hasAll([
+          'tmdbId', 'authorId', 'authorName', 'authorInitials', 'authorAvatar',
+          'stars', 'text', 'createdAt', 'updatedAt'
+        ]);
+
+      allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+    }
+
+    match /directMessages/{msgId} {
+      // Simplificado para destravar a leitura (O filtro real será feito no frontend)
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.fromId == request.auth.uid
+        && request.resource.data.keys().hasAll([
+          'fromId', 'toId', 'text', 'threadId', 'createdAt'
+        ])
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 4000
+        && request.resource.data.threadId is string
+        && request.resource.data.threadId.size() > 0;
+    }
+  }
+}

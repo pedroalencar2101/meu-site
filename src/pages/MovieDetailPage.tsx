@@ -215,8 +215,6 @@ export default function MovieDetailPage() {
     }
   }
 
-  const mine = user ? reviews.find((r) => r.authorId === user.uid) : undefined;
-
   if (!Number.isFinite(tmdbId) || tmdbId <= 0) {
     return (
       <div className="min-h-screen bg-[#f0f2f5] p-6 font-sans">

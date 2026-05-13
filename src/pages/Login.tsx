@@ -53,7 +53,6 @@ export default function Login() {
       } catch {
         console.error('Erro ao carregar catálogo.');
       } finally {
-        setIsLoading(false);
       }
     };
     fetchMovies();

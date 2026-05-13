@@ -94,10 +94,10 @@ export default function CommentsModal({
     setSubmitting(true);
     try {
       await addComment({ 
-  postId, 
+  postId: postId || "", 
   uid: uid || "", 
   displayName: displayName || "Usuário", 
-  text 
+  text: text || "" 
 });
       setText('');
     } catch (err) {

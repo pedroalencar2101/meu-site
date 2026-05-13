@@ -93,7 +93,12 @@ export default function CommentsModal({
     if (!text.trim() || submitting) return;
     setSubmitting(true);
     try {
-      await addComment({ postId, uid, displayName: displayName || "Usuário", text });
+      await addComment({ 
+  postId, 
+  uid: uid || "", 
+  displayName: displayName || "Usuário", 
+  text 
+});
       setText('');
     } catch (err) {
       console.error(err);

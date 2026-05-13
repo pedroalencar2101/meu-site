@@ -1352,7 +1352,7 @@ export default function NoctalProfile() {
                       <li key={r.id} className="flex gap-2 py-3">
                         <div className="flex h-16 w-11 shrink-0 overflow-hidden rounded-md bg-slate-200">
                           {r.moviePosterPath ? (
-                            <img src={posterUrl(r.moviePosterPath, 'w92')} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                            <img src={posterUrl(r.moviePosterPath, 'w185')} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
                             <div className="flex h-full items-center justify-center text-[10px] font-bold text-slate-500">TMDB</div>
                           )}
@@ -1687,7 +1687,7 @@ export default function NoctalProfile() {
                       <li key={m.id} className="flex items-center gap-3 p-3">
                         <div className="h-14 w-10 shrink-0 overflow-hidden rounded bg-slate-200">
                           {m.poster_path ? (
-                            <img src={posterUrl(m.poster_path, 'w92')} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                            <img src={posterUrl(m.poster_path, 'w185')} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
                             <div className="flex h-full items-center justify-center text-[8px] font-bold text-slate-500">—</div>
                           )}

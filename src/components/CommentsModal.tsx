@@ -90,7 +90,7 @@ export default function CommentsModal({
       return;
     }
     const m = await fetchMyCommentReactions(
-      postId,
+      "",
       list.map((c) => c.id),
       uid
     );
@@ -103,7 +103,14 @@ export default function CommentsModal({
     if (!text.trim() || submitting) return;
     setSubmitting(true);
     try {
-      await addComment({ postId: postId!, uid, displayName, photoURL: myAvatar || null, text, parentId: replyTo?.id });
+await addComment({ 
+  postId: postId || "", 
+  uid: uid || "", 
+  displayName: displayName || "Usuário", 
+  photoURL: myAvatar || null,
+  text: text || "",
+  parentId: replyTo?.id || null
+});
       setText('');
       setReplyTo(null);
     } catch (err) {

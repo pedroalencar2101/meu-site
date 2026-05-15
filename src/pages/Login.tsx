@@ -20,7 +20,6 @@ type PosterItem = { url: string; title: string };
 export default function Login() {
   const navigate = useNavigate();
   const [posters, setPosters] = useState<PosterItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
 
   const [isRegistering, setIsRegistering] = useState(false);
   const [fullName, setFullName] = useState('');
@@ -54,7 +53,6 @@ export default function Login() {
       } catch {
         console.error('Erro ao carregar catálogo.');
       } finally {
-        setIsLoading(false);
       }
     };
     fetchMovies();

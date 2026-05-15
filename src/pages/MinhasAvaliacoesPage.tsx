@@ -6,6 +6,7 @@ import { auth } from '../services/firebase';
 import { deleteMovieReview, subscribeMyMovieReviews } from '../services/movieReviews';
 import type { MovieReview } from '../types/movieReview';
 import AppPageShell from '../components/AppPageShell';
+import ConfirmModal from '../components/ConfirmModal';
 import { formatPostTime } from '../utils/formatPostTime';
 import { getTmdbKey, posterUrl, tmdbGet, type TmdbMovieDetail } from '../services/tmdbClient';
 
@@ -27,21 +28,29 @@ export default function MinhasAvaliacoesPage() {
   const [listErr, setListErr] = useState<string | null>(null);
   const [resolved, setResolved] = useState<Record<number, { title: string; poster: string | null }>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<{ id: string; title: string; tmdbId: number } | null>(null);
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
 
   useEffect(() => {
     if (!user) {
-      setReviews([]);
-      setListErr(null);
-      return;
+      const t1 = setTimeout(() => setReviews([]), 0);
+      const t2 = setTimeout(() => setListErr(null), 0);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
     }
-    setListErr(null);
-    return subscribeMyMovieReviews(
+    const tErr = setTimeout(() => setListErr(null), 0);
+    const unsub = subscribeMyMovieReviews(
       user.uid,
       (list) => setReviews(list),
       (e) => setListErr(e.message)
     );
+    return () => {
+      clearTimeout(tErr);
+      unsub();
+    };
   }, [user]);
 
   const tmdbKey = getTmdbKey();
@@ -157,14 +166,7 @@ export default function MinhasAvaliacoesPage() {
                   aria-label={`Apagar avaliação: ${title}`}
                   onClick={() => {
                     if (!user) return;
-                    if (!window.confirm(`Apagar a tua avaliação de «${title}»? Isto remove também a publicação no feed.`)) return;
-                    setDeletingId(r.id);
-                    void deleteMovieReview(r.tmdbId, user.uid)
-                      .catch((err) => {
-                        console.error(err);
-                        alert('Não foi possível apagar a avaliação.');
-                      })
-                      .finally(() => setDeletingId(null));
+                    setConfirmDeleteId({ id: r.id, title, tmdbId: r.tmdbId });
                   }}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -181,6 +183,24 @@ export default function MinhasAvaliacoesPage() {
           Define <code className="rounded bg-amber-100 px-1">VITE_TMDB_API_KEY</code> para carregar títulos de avaliações antigas.
         </p>
       )}
+      <ConfirmModal
+        isOpen={!!confirmDeleteId}
+        title="Apagar Avaliação"
+        message={`Tem certeza que quer apagar a avaliação de «${confirmDeleteId?.title}»? Esta ação também removerá a publicação do feed e não pode ser desfeita.`}
+        confirmLabel="Apagar"
+        onConfirm={() => {
+          if (!user || !confirmDeleteId) return;
+          setDeletingId(confirmDeleteId.id);
+          void deleteMovieReview(confirmDeleteId.tmdbId, user.uid)
+            .catch((err) => {
+              console.error(err);
+              alert('Não foi possível apagar a avaliação.');
+            })
+            .finally(() => setDeletingId(null));
+        }}
+        onCancel={() => setConfirmDeleteId(null)}
+        isDestructive={true}
+      />
     </AppPageShell>
   );
 }

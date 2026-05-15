@@ -19,6 +19,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import type { FirestoreComment, FirestorePost, MovieEmbed, ReactionType } from '../types/feed';
+import { notifyFollowersReviewPost } from './notifications';
 
 const POSTS = 'posts';
 const IN_CHUNK = 30;
@@ -34,7 +35,9 @@ function mapPostData(id: string, x: DocumentData): FirestorePost {
     createdAt: x.createdAt ?? null,
     movie: (x.movie as FirestorePost['movie']) ?? null,
     likeCount: (x.likeCount as number) ?? 0,
-    dislikeCount: (x.dislikeCount as number) ?? 0,
+    loveCount: (x.loveCount as number) ?? 0,
+    smileCount: (x.smileCount as number) ?? 0,
+    angryCount: (x.angryCount as number) ?? 0,
     commentCount: (x.commentCount as number) ?? 0,
   };
 }
@@ -163,7 +166,7 @@ export async function fetchMyReactionsForPosts(
       const r = await getDoc(doc(reactionsCol(postId), uid));
       if (r.exists()) {
         const t = r.data()?.type as ReactionType | undefined;
-        if (t === 'like' || t === 'dislike') map.set(postId, t);
+        if (t === 'like' || t === 'love' || t === 'smile' || t === 'angry') map.set(postId, t);
       }
     })
   );
@@ -186,11 +189,22 @@ export async function createPost(params: {
     content: params.content.trim(),
     movie: params.movie ?? null,
     likeCount: 0,
-    dislikeCount: 0,
+    loveCount: 0,
+    smileCount: 0,
+    angryCount: 0,
     commentCount: 0,
     createdAt: serverTimestamp(),
   });
-  return ref.id;
+  const postId = ref.id;
+  if (params.movie) {
+    void notifyFollowersReviewPost({
+      actorId: params.uid,
+      actorName: params.displayName,
+      movieTitle: params.movie.title,
+      postId,
+    }).catch((e) => console.error('notifyFollowersReviewPost', e));
+  }
+  return postId;
 }
 
 export async function toggleReaction(postId: string, uid: string, type: ReactionType): Promise<void> {
@@ -203,25 +217,23 @@ export async function toggleReaction(postId: string, uid: string, type: Reaction
 
     const prev = rSnap.exists() ? (rSnap.data().type as ReactionType) : null;
 
-    let likeDelta = 0;
-    let dislikeDelta = 0;
     let next: ReactionType | 'remove' = type;
+
+    const deltas: Record<string, number> = {
+      like: 0,
+      love: 0,
+      smile: 0,
+      angry: 0
+    };
 
     if (prev === type) {
       next = 'remove';
-      if (type === 'like') likeDelta = -1;
-      else dislikeDelta = -1;
+      deltas[type] = -1;
     } else if (prev === null) {
-      if (type === 'like') likeDelta = 1;
-      else dislikeDelta = 1;
+      deltas[type] = 1;
     } else {
-      if (type === 'like') {
-        likeDelta = 1;
-        dislikeDelta = -1;
-      } else {
-        likeDelta = -1;
-        dislikeDelta = 1;
-      }
+      deltas[prev] = -1;
+      deltas[type] = 1;
     }
 
     if (next === 'remove') {
@@ -231,8 +243,10 @@ export async function toggleReaction(postId: string, uid: string, type: Reaction
     }
 
     const upd: Record<string, unknown> = {};
-    if (likeDelta !== 0) upd.likeCount = increment(likeDelta);
-    if (dislikeDelta !== 0) upd.dislikeCount = increment(dislikeDelta);
+    if (deltas.like !== 0) upd.likeCount = increment(deltas.like);
+    if (deltas.love !== 0) upd.loveCount = increment(deltas.love);
+    if (deltas.smile !== 0) upd.smileCount = increment(deltas.smile);
+    if (deltas.angry !== 0) upd.angryCount = increment(deltas.angry);
     if (Object.keys(upd).length) tx.update(pRef, upd);
   });
 }
@@ -250,13 +264,18 @@ export function subscribeComments(
         const x = d.data();
         return {
           id: d.id,
+          postId,
           authorId: x.authorId,
           authorName: x.authorName,
           authorInitials: x.authorInitials ?? '',
+          authorAvatar: x.authorAvatar ?? null,
           text: x.text,
+          parentId: x.parentId ?? null,
           createdAt: x.createdAt ?? null,
           likeCount: x.likeCount ?? 0,
-          dislikeCount: x.dislikeCount ?? 0,
+          loveCount: x.loveCount ?? 0,
+          smileCount: x.smileCount ?? 0,
+          angryCount: x.angryCount ?? 0,
         };
       });
       onComments(list);
@@ -269,7 +288,9 @@ export async function addComment(params: {
   postId: string;
   uid: string;
   displayName: string;
+  photoURL: string | null;
   text: string;
+  parentId?: string | null;
 }): Promise<void> {
   const batch = writeBatch(db);
   const cRef = doc(collection(db, POSTS, params.postId, 'comments'));
@@ -277,9 +298,13 @@ export async function addComment(params: {
     authorId: params.uid,
     authorName: params.displayName,
     authorInitials: initialsFromName(params.displayName),
+    authorAvatar: params.photoURL,
     text: params.text.trim(),
+    parentId: params.parentId ?? null,
     likeCount: 0,
-    dislikeCount: 0,
+    loveCount: 0,
+    smileCount: 0,
+    angryCount: 0,
     createdAt: serverTimestamp(),
   });
   batch.update(postRef(params.postId), { commentCount: increment(1) });
@@ -301,25 +326,23 @@ export async function toggleCommentReaction(
 
     const prev = rSnap.exists() ? (rSnap.data().type as ReactionType) : null;
 
-    let likeDelta = 0;
-    let dislikeDelta = 0;
     let next: ReactionType | 'remove' = type;
+
+    const deltas: Record<string, number> = {
+      like: 0,
+      love: 0,
+      smile: 0,
+      angry: 0
+    };
 
     if (prev === type) {
       next = 'remove';
-      if (type === 'like') likeDelta = -1;
-      else dislikeDelta = -1;
+      deltas[type] = -1;
     } else if (prev === null) {
-      if (type === 'like') likeDelta = 1;
-      else dislikeDelta = 1;
+      deltas[type] = 1;
     } else {
-      if (type === 'like') {
-        likeDelta = 1;
-        dislikeDelta = -1;
-      } else {
-        likeDelta = -1;
-        dislikeDelta = 1;
-      }
+      deltas[prev] = -1;
+      deltas[type] = 1;
     }
 
     if (next === 'remove') {
@@ -329,8 +352,10 @@ export async function toggleCommentReaction(
     }
 
     const upd: Record<string, unknown> = {};
-    if (likeDelta !== 0) upd.likeCount = increment(likeDelta);
-    if (dislikeDelta !== 0) upd.dislikeCount = increment(dislikeDelta);
+    if (deltas.like !== 0) upd.likeCount = increment(deltas.like);
+    if (deltas.love !== 0) upd.loveCount = increment(deltas.love);
+    if (deltas.smile !== 0) upd.smileCount = increment(deltas.smile);
+    if (deltas.angry !== 0) upd.angryCount = increment(deltas.angry);
     if (Object.keys(upd).length) tx.update(cRef, upd);
   });
 }
@@ -347,7 +372,7 @@ export async function fetchMyCommentReactions(
       const r = await getDoc(doc(commentReactionsCol(postId, cid), uid));
       if (r.exists()) {
         const t = r.data()?.type as ReactionType | undefined;
-        if (t === 'like' || t === 'dislike') map.set(cid, t);
+        if (t === 'like' || t === 'love' || t === 'smile' || t === 'angry') map.set(cid, t);
       }
     })
   );

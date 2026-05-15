@@ -1,88 +1,251 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, getDocs, limit, query } from 'firebase/firestore';
-import { ArrowLeft, ChevronRight, MessageCircle } from 'lucide-react';
-import { db } from '../services/firebase';
+import {
+  collection,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  where,
+  type DocumentData,
+  type QuerySnapshot,
+} from 'firebase/firestore';
+import { onAuthStateChanged, type User } from 'firebase/auth';
+import { ArrowLeft, MessageCircle, Clock, Users as UsersIcon } from 'lucide-react';
+import { auth, db } from '../services/firebase';
+import MobileBottomNav from '../components/MobileBottomNav';
 
-type Row = { id: string; label: string };
+type PeerRow = {
+  uid: string;
+  label: string;
+  photo: string | null;
+  initials: string;
+  preview: string;
+  at: number;
+};
+
+type UserRow = { id: string; label: string; photo: string | null; initials: string };
+
+function initialsFrom(s: string): string {
+  const p = s.trim().split(/\s+/).filter(Boolean);
+  if (p.length >= 2) return (p[0][0] + p[p.length - 1][0]).toUpperCase();
+  return s.slice(0, 2).toUpperCase() || '?';
+}
+
+function userRowFromDoc(id: string, x: Record<string, unknown>): UserRow {
+  const fullName = typeof x.fullName === 'string' ? x.fullName.trim() : '';
+  const email = typeof x.email === 'string' ? x.email : '';
+  const label = fullName || email.split('@')[0] || id;
+  const photo =
+    (typeof x.avatarCustomDataUrl === 'string' && x.avatarCustomDataUrl.trim()) ||
+    (typeof x.photoURL === 'string' && x.photoURL.trim()) ||
+    null;
+  return { id, label, photo, initials: initialsFrom(label) };
+}
+
+function mergeInbox(meUid: string, snaps: (QuerySnapshot<DocumentData> | null)[]): Map<string, { preview: string; at: number }> {
+  const map = new Map<string, { preview: string; at: number }>();
+  for (const snap of snaps) {
+    if (!snap) continue;
+    for (const d of snap.docs) {
+      const x = d.data();
+      const fromId = String(x.fromId ?? '');
+      const toId = String(x.toId ?? '');
+      const text = String(x.text ?? '');
+      const createdAt = x.createdAt as { toMillis?: () => number } | undefined;
+      const t = createdAt?.toMillis?.() ?? 0;
+      const other = fromId === meUid ? toId : fromId;
+      if (!other || other === meUid) continue;
+      const prev = map.get(other);
+      if (!prev || t >= prev.at) {
+        map.set(other, { preview: text.slice(0, 100), at: t });
+      }
+    }
+  }
+  return map;
+}
 
 export default function MensagensPage() {
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [me, setMe] = useState<User | null>(auth.currentUser);
+  const [directory, setDirectory] = useState<UserRow[]>([]);
+  const [peerMap, setPeerMap] = useState<Map<string, { preview: string; at: number }>>(new Map());
+  const sentSnapRef = useRef<QuerySnapshot<DocumentData> | null>(null);
+  const recvSnapRef = useRef<QuerySnapshot<DocumentData> | null>(null);
+
+  useEffect(() => onAuthStateChanged(auth, setMe), []);
 
   useEffect(() => {
-    const run = async () => {
-      try {
-        const snap = await getDocs(query(collection(db, 'users'), limit(40)));
-        const list: Row[] = snap.docs.map((d) => {
-          const x = d.data() as { fullName?: string; email?: string };
-          const label = (x.fullName && x.fullName.trim()) || x.email || d.id;
-          return { id: d.id, label };
-        });
-        setRows(list);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
+    const q = query(collection(db, 'users'), limit(80));
+    return onSnapshot(q, (snap) => {
+      const list = snap.docs.map((d) => userRowFromDoc(d.id, d.data() as Record<string, unknown>));
+      setDirectory(me ? list.filter((u) => u.id !== me.uid).sort((a, b) => a.label.localeCompare(b.label)) : list);
+    });
+  }, [me?.uid]);
+
+  useEffect(() => {
+    if (!me?.uid) {
+      const t = setTimeout(() => setPeerMap(new Map()), 0);
+      sentSnapRef.current = null;
+      recvSnapRef.current = null;
+      return () => clearTimeout(t);
+    }
+    const push = () => {
+      const m = mergeInbox(me.uid, [sentSnapRef.current, recvSnapRef.current]);
+      setPeerMap(m);
     };
-    run();
-  }, []);
+    const q1 = query(
+      collection(db, 'directMessages'),
+      where('fromId', '==', me.uid),
+      orderBy('createdAt', 'desc'),
+      limit(80)
+    );
+    const q2 = query(
+      collection(db, 'directMessages'),
+      where('toId', '==', me.uid),
+      orderBy('createdAt', 'desc'),
+      limit(80)
+    );
+    const un1 = onSnapshot(q1, (s) => {
+      sentSnapRef.current = s;
+      push();
+    });
+    const un2 = onSnapshot(q2, (s) => {
+      recvSnapRef.current = s;
+      push();
+    });
+    return () => {
+      un1();
+      un2();
+    };
+  }, [me?.uid]);
+
+  const peersWithPhotos = useMemo(() => {
+    const rows: PeerRow[] = [...peerMap.entries()]
+      .map(([uid, v]) => {
+        const u = directory.find((d) => d.id === uid);
+        return {
+          uid,
+          label: u?.label ?? uid,
+          photo: u?.photo ?? null,
+          initials: u?.initials ?? '?',
+          preview: v.preview,
+          at: v.at,
+        };
+      })
+      .sort((a, b) => b.at - a.at);
+    return rows;
+  }, [peerMap, directory]);
 
   return (
-    <div className="min-h-dvh bg-gradient-to-b from-slate-100 via-violet-50/50 to-slate-200 font-sans text-slate-900">
-      <header className="border-b border-violet-200/70 bg-white/90 px-4 py-4 shadow-sm backdrop-blur-md">
-        <div className="mx-auto flex max-w-lg items-center gap-3">
-          <Link to="/" className="rounded-full p-2 text-slate-600 transition hover:bg-violet-50">
+    <div className="relative min-h-dvh w-full max-w-[100vw] bg-[#f0f2f5] font-sans text-slate-900 selection:bg-slate-300 [overflow-x:clip] pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0">
+      <header className="sticky top-0 z-30 border-b border-slate-200/90 bg-white/95 shadow-sm backdrop-blur-md supports-[backdrop-filter]:bg-white/90">
+        <div className="mx-auto flex max-w-3xl items-center gap-3 px-3 py-3 sm:px-4 sm:py-4">
+          <Link
+            to="/"
+            className="shrink-0 rounded-full p-2 text-slate-600 transition-colors hover:bg-slate-100"
+            aria-label="Voltar para a Home"
+          >
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-700 text-white shadow-md">
-            <MessageCircle className="h-5 w-5" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 shadow-inner">
+            <MessageCircle className="h-5 w-5 text-slate-700" />
           </div>
           <div>
-            <h1 className="text-lg font-black uppercase tracking-wide text-slate-900">Mensagens</h1>
-            <p className="text-xs font-medium text-slate-500">Abre o perfil primeiro; o ícone abre o chat.</p>
+            <h1 className="text-xl font-black tracking-tight text-slate-900">Mensagens</h1>
+            <p className="text-[13px] font-medium text-slate-500">Conversas privadas</p>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-lg px-4 py-8">
-        <div className="overflow-hidden rounded-2xl border border-violet-100/90 bg-white shadow-lg shadow-violet-100/40">
-          {loading ? (
-            <p className="p-8 text-center text-sm font-medium text-slate-500">A carregar…</p>
-          ) : rows.length === 0 ? (
-            <p className="p-8 text-center text-sm text-slate-500">Ainda não há utilizadores na coleção users.</p>
-          ) : (
-            <ul className="divide-y divide-violet-100">
-              {rows.map((r) => (
-                <li key={r.id} className="flex items-stretch">
-                  <Link
-                    to={`/u/${r.id}`}
-                    className="flex min-w-0 flex-1 items-center gap-3 px-4 py-4 transition hover:bg-violet-50/80"
-                  >
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-200 to-slate-300 text-xs font-black text-slate-700">
-                      {r.label.slice(0, 2).toUpperCase()}
+      <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-3 py-6 sm:px-4 sm:py-8">
+        <section>
+          <div className="mb-4 flex items-center gap-2 text-slate-700">
+            <Clock className="h-4 w-4" />
+            <h2 className="text-[13px] font-black uppercase tracking-widest text-slate-500">Recentes</h2>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            {peersWithPhotos.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+                <MessageCircle className="h-12 w-12 text-slate-300 mb-3" />
+                <p className="text-[15px] font-bold text-slate-900">Nenhuma conversa ainda</p>
+                <p className="mt-1 text-[14px] text-slate-500 max-w-xs">
+                  Inicie uma conversa escolhendo alguém da sua rede abaixo.
+                </p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {peersWithPhotos.map((r) => (
+                  <li key={r.uid} className="transition-colors hover:bg-slate-50">
+                    <Link to={`/mensagens/${r.uid}`} className="flex min-w-0 flex-1 items-center gap-4 px-4 py-4 sm:px-5">
+                      <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+                        {r.photo ? (
+                          <img src={r.photo} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-gradient-to-tr from-slate-200 to-slate-300 text-sm font-black text-slate-600">
+                            {r.initials}
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between">
+                          <p className="truncate text-[16px] font-bold text-slate-900">{r.label}</p>
+                          {r.at > 0 && (
+                            <span className="text-[12px] font-medium text-slate-400">
+                              {new Date(r.at).toLocaleString('pt-BR', {
+                                day: 'numeric',
+                                month: 'short',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-0.5 truncate text-[14px] text-slate-500">{r.preview || '…'}</p>
+                      </div>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+
+        <section className="pb-10">
+          <div className="mb-4 flex items-center gap-2 text-slate-700">
+            <UsersIcon className="h-4 w-4" />
+            <h2 className="text-[13px] font-black uppercase tracking-widest text-slate-500">Nova Conversa</h2>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <ul className="divide-y divide-slate-100">
+              {directory.map((r) => (
+                <li key={r.id} className="flex items-stretch transition-colors hover:bg-slate-50">
+                  <Link to={`/mensagens/${r.id}`} className="flex min-w-0 flex-1 items-center gap-4 px-4 py-3 sm:px-5">
+                    <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+                      {r.photo ? (
+                        <img src={r.photo} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-[12px] font-black text-slate-600 bg-gradient-to-tr from-slate-200 to-slate-300">
+                          {r.initials}
+                        </div>
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-bold text-slate-900">{r.label}</p>
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-violet-600">Ver perfil</p>
+                      <p className="truncate text-[15px] font-bold text-slate-900">{r.label}</p>
                     </div>
-                    <ChevronRight className="h-5 w-5 shrink-0 text-slate-300" />
-                  </Link>
-                  <Link
-                    to={`/mensagens/${r.id}`}
-                    className="flex w-14 shrink-0 flex-col items-center justify-center border-l border-violet-100 bg-violet-50/50 text-violet-700 transition hover:bg-violet-100"
-                    title="Abrir conversa"
-                    aria-label={`Mensagem para ${r.label}`}
-                  >
-                    <MessageCircle className="h-6 w-6" />
+                    <div className="flex items-center justify-center rounded-full bg-slate-100 p-2 text-slate-600 transition hover:bg-slate-200">
+                      <MessageCircle className="h-4 w-4" />
+                    </div>
                   </Link>
                 </li>
               ))}
+              {directory.length === 0 && (
+                <li className="p-6 text-center text-[14px] text-slate-500">Nenhum utilizador encontrado.</li>
+              )}
             </ul>
-          )}
-        </div>
+          </div>
+        </section>
       </main>
+      <MobileBottomNav />
     </div>
   );
 }

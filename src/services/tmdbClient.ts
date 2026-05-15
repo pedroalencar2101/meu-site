@@ -21,6 +21,8 @@ export type TmdbMovieListItem = {
   id: number;
   title: string;
   poster_path: string | null;
+  /** Presente em muitas respostas de pesquisa; usado como banner na lista. */
+  backdrop_path?: string | null;
   overview?: string;
   release_date?: string;
   vote_average?: number;

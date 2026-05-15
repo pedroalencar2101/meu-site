@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Film, Loader2, Star, Trash2 } from 'lucide-react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from '../services/firebase';
+import ConfirmModal from '../components/ConfirmModal';
 import { backdropUrl, posterUrl, tmdbGet, type TmdbMovieDetail } from '../services/tmdbClient';
 import type { MovieEmbed } from '../types/feed';
 import type { MovieReview } from '../types/movieReview';
@@ -75,18 +76,18 @@ export default function MovieDetailPage() {
   const [deleting, setDeleting] = useState(false);
   /** Documento em `movieReviews` existe (não depender só da lista em tempo real). */
   const [hasMyReviewSaved, setHasMyReviewSaved] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
 
   useEffect(() => {
     if (!Number.isFinite(tmdbId) || tmdbId <= 0) {
-      setMovieLoading(false);
-      setMovieErr('Filme inválido.');
-      return;
+      const t1 = setTimeout(() => setMovieLoading(false), 0);
+      const t2 = setTimeout(() => setMovieErr('Filme inválido.'), 0);
+      return () => { clearTimeout(t1); clearTimeout(t2); };
     }
     let cancelled = false;
-    setMovieLoading(true);
-    setMovieErr(null);
+    const t3 = setTimeout(() => { setMovieLoading(true); setMovieErr(null); }, 0);
     tmdbGet<TmdbMovieDetail>(`/movie/${tmdbId}`)
       .then((data) => {
         if (!cancelled) setMovie(data);
@@ -99,6 +100,7 @@ export default function MovieDetailPage() {
       });
     return () => {
       cancelled = true;
+      clearTimeout(t3);
     };
   }, [tmdbId]);
 
@@ -113,8 +115,8 @@ export default function MovieDetailPage() {
 
   useEffect(() => {
     if (!user || !Number.isFinite(tmdbId) || tmdbId <= 0) {
-      setHasMyReviewSaved(false);
-      return;
+      const t = setTimeout(() => setHasMyReviewSaved(false), 0);
+      return () => clearTimeout(t);
     }
     let cancelled = false;
     getMyMovieReview(tmdbId, user.uid).then((mine) => {
@@ -200,7 +202,6 @@ export default function MovieDetailPage() {
 
   async function onDeleteMine() {
     if (!user || !Number.isFinite(tmdbId) || tmdbId <= 0) return;
-    if (!window.confirm('Remover a tua avaliação deste filme?')) return;
     setDeleting(true);
     try {
       await deleteMovieReview(tmdbId, user.uid);
@@ -212,10 +213,9 @@ export default function MovieDetailPage() {
       alert('Não foi possível apagar.');
     } finally {
       setDeleting(false);
+      setConfirmDelete(false);
     }
   }
-
-  const mine = user ? reviews.find((r) => r.authorId === user.uid) : undefined;
 
   if (!Number.isFinite(tmdbId) || tmdbId <= 0) {
     return (
@@ -396,7 +396,7 @@ export default function MovieDetailPage() {
                     {hasMyReviewSaved && (
                       <button
                         type="button"
-                        onClick={() => void onDeleteMine()}
+                        onClick={() => setConfirmDelete(true)}
                         disabled={deleting}
                         className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700 hover:bg-red-100 disabled:opacity-50"
                       >
@@ -455,6 +455,15 @@ export default function MovieDetailPage() {
           </main>
         </>
       )}
+      <ConfirmModal
+        isOpen={confirmDelete}
+        title="Remover avaliação"
+        message="Tem certeza que quer remover a tua avaliação deste filme?"
+        confirmLabel="Remover"
+        onConfirm={() => void onDeleteMine()}
+        onCancel={() => setConfirmDelete(false)}
+        isDestructive={true}
+      />
     </div>
   );
 }

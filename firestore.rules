@@ -16,7 +16,7 @@ service cloud.firestore {
 
     function postCountersOnly() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['likeCount', 'dislikeCount', 'commentCount']);
+        .hasOnly(['likeCount', 'loveCount', 'smileCount', 'angryCount', 'commentCount']);
     }
 
     function postImmutableOnCounterUpdate() {
@@ -30,7 +30,7 @@ service cloud.firestore {
 
     function commentCountersOnly() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['likeCount', 'dislikeCount']);
+        .hasOnly(['likeCount', 'loveCount', 'smileCount', 'angryCount']);
     }
 
     function commentImmutableOnCounterUpdate() {
@@ -60,11 +60,13 @@ service cloud.firestore {
         && request.resource.data.content.size() <= 8000
         && (request.resource.data.movie == null || request.resource.data.movie is map)
         && request.resource.data.likeCount == 0
-        && request.resource.data.dislikeCount == 0
+        && request.resource.data.loveCount == 0
+        && request.resource.data.smileCount == 0
+        && request.resource.data.angryCount == 0
         && request.resource.data.commentCount == 0
         && request.resource.data.keys().hasAll([
           'authorId', 'authorName', 'authorInitials', 'authorAvatar', 'content',
-          'movie', 'likeCount', 'dislikeCount', 'commentCount', 'createdAt'
+          'movie', 'likeCount', 'loveCount', 'smileCount', 'angryCount', 'commentCount', 'createdAt'
         ]);
 
       allow update: if signedIn() && postCountersOnly() && postImmutableOnCounterUpdate();
@@ -75,7 +77,7 @@ service cloud.firestore {
         allow read: if signedIn();
         allow create, update: if isUser(uid)
           && request.resource.data.keys().hasAll(['type', 'updatedAt'])
-          && request.resource.data.type in ['like', 'dislike'];
+          && request.resource.data.type in ['like', 'love', 'smile', 'angry'];
         allow delete: if isUser(uid);
       }
 
@@ -85,14 +87,17 @@ service cloud.firestore {
           && request.resource.data.authorId == request.auth.uid
           && request.resource.data.authorName is string
           && request.resource.data.authorInitials is string
+          && (request.resource.data.authorAvatar == null || request.resource.data.authorAvatar is string)
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 4000
           && request.resource.data.likeCount == 0
-          && request.resource.data.dislikeCount == 0
+          && request.resource.data.loveCount == 0
+          && request.resource.data.smileCount == 0
+          && request.resource.data.angryCount == 0
           && request.resource.data.keys().hasAll([
-            'authorId', 'authorName', 'authorInitials', 'text',
-            'likeCount', 'dislikeCount', 'createdAt'
+            'authorId', 'authorName', 'authorInitials', 'authorAvatar', 'text', 'parentId',
+            'likeCount', 'loveCount', 'smileCount', 'angryCount', 'createdAt'
           ]);
 
         allow update: if signedIn() && commentCountersOnly() && commentImmutableOnCounterUpdate();
@@ -106,7 +111,7 @@ service cloud.firestore {
           allow read: if signedIn();
           allow create, update: if isUser(uid)
             && request.resource.data.keys().hasAll(['type', 'updatedAt'])
-            && request.resource.data.type in ['like', 'dislike'];
+            && request.resource.data.type in ['like', 'love', 'smile', 'angry'];
           allow delete: if isUser(uid);
         }
       }
@@ -167,6 +172,34 @@ service cloud.firestore {
         ]);
 
       allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+    }
+
+    match /notifications/{nid} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+
+      allow create: if signedIn()
+        && request.resource.data.userId is string
+        && request.resource.data.actorId == request.auth.uid
+        && request.resource.data.userId != request.auth.uid
+        && request.resource.data.type in ['message', 'review_post']
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.body is string
+        && request.resource.data.body.size() > 0
+        && request.resource.data.body.size() <= 600
+        && request.resource.data.read == false
+        && (request.resource.data.postId == null || request.resource.data.postId is string)
+        && request.resource.data.keys().hasAll([
+          'userId', 'actorId', 'type', 'title', 'body', 'read', 'postId', 'createdAt'
+        ]);
+
+      allow update: if signedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
+        && request.resource.data.read == true;
+
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
     }
 
     match /directMessages/{msgId} {

@@ -1,52 +1,95 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bell, Film, MessageCircle, Users } from 'lucide-react';
+import { onAuthStateChanged, type User } from 'firebase/auth';
+import { Bell, Film, MessageCircle } from 'lucide-react';
+import { auth } from '../services/firebase';
 import AppPageShell from '../components/AppPageShell';
+import { formatPostTime } from '../utils/formatPostTime';
+import { markNotificationRead, subscribeMyNotifications, type AppNotification } from '../services/notifications';
 
 export default function NotificacoesPage() {
+  const [user, setUser] = useState<User | null>(auth.currentUser);
+  const [list, setList] = useState<AppNotification[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => onAuthStateChanged(auth, setUser), []);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setList([]);
+      return;
+    }
+    return subscribeMyNotifications(
+      user.uid,
+      setList,
+      (e) => setErr(e.message)
+    );
+  }, [user?.uid]);
+
+  async function onOpen(n: AppNotification) {
+    if (!n.read) {
+      try {
+        await markNotificationRead(n.id);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  const unread = list.filter((n) => !n.read).length;
+
   return (
-    <AppPageShell
-      title="Notificações"
-      description="Alertas da tua rede e da comunidade."
-      backTo="/"
-    >
-      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 shadow-sm">
-        <div className="border-b border-slate-100 px-6 py-10 text-center">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-lg">
-            <Bell className="h-10 w-10" />
-          </div>
-          <h2 className="mt-6 text-xl font-black tracking-tight text-slate-900">Centro de notificações</h2>
-          <p className="mx-auto mt-3 max-w-md text-sm font-medium leading-relaxed text-slate-600">
-            Ainda não há alertas por aqui. Quando seguires mais pessoas e interagires com filmes e mensagens, este espaço
-            concentrará gostos, comentários e novidades da rede.
-          </p>
+    <AppPageShell title="Notificações" description="Mensagens e novidades de quem segues." backTo="/">
+      {err && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {err} — confirma o índice Firestore: notifications (userId + createdAt).
         </div>
-        <div className="grid gap-px bg-slate-200 sm:grid-cols-3">
-          <Link
-            to="/explorar"
-            className="flex flex-col items-center gap-2 bg-white px-4 py-6 text-center transition hover:bg-slate-50"
-          >
-            <Users className="h-6 w-6 text-slate-500" />
-            <span className="text-xs font-black uppercase tracking-wide text-slate-800">Explorar</span>
-            <span className="text-[11px] font-medium text-slate-500">Encontrar perfis</span>
-          </Link>
-          <Link
-            to="/em-cartaz"
-            className="flex flex-col items-center gap-2 bg-white px-4 py-6 text-center transition hover:bg-slate-50"
-          >
-            <Film className="h-6 w-6 text-amber-600" />
-            <span className="text-xs font-black uppercase tracking-wide text-slate-800">Cinema</span>
-            <span className="text-[11px] font-medium text-slate-500">Avaliações TMDB</span>
-          </Link>
-          <Link
-            to="/mensagens"
-            className="flex flex-col items-center gap-2 bg-white px-4 py-6 text-center transition hover:bg-slate-50"
-          >
-            <MessageCircle className="h-6 w-6 text-slate-500" />
-            <span className="text-xs font-black uppercase tracking-wide text-slate-800">Mensagens</span>
-            <span className="text-[11px] font-medium text-slate-500">Conversas privadas</span>
-          </Link>
+      )}
+
+      <div className="mb-4 flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="flex items-center gap-2">
+          <Bell className="h-5 w-5 text-slate-700" />
+          <span className="text-sm font-bold text-slate-800">
+            {unread > 0 ? `${unread} não lidas` : 'Estás em dia'}
+          </span>
         </div>
+        <Link to="/mensagens" className="text-xs font-black uppercase tracking-wide text-violet-700 underline">
+          Mensagens
+        </Link>
       </div>
+
+      <ul className="space-y-2">
+        {list.length === 0 ? (
+          <li className="rounded-2xl border border-dashed border-slate-300 bg-white py-16 text-center text-sm font-medium text-slate-500">
+            Sem notificações ainda. Quando alguém te enviar mensagem ou um seguidor publicar uma avaliação de filme, aparece aqui.
+          </li>
+        ) : (
+          list.map((n) => (
+            <li key={n.id}>
+              <Link
+                to={n.type === 'message' ? `/mensagens/${n.actorId}` : '/'}
+                onClick={() => void onOpen(n)}
+                className={`flex gap-3 rounded-2xl border px-4 py-3 shadow-sm transition hover:border-violet-200 hover:bg-violet-50/40 ${
+                  n.read ? 'border-slate-100 bg-white' : 'border-violet-200 bg-violet-50/60'
+                }`}
+              >
+                <div
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+                    n.type === 'message' ? 'bg-violet-600 text-white' : 'bg-amber-500 text-white'
+                  }`}
+                >
+                  {n.type === 'message' ? <MessageCircle className="h-5 w-5" /> : <Film className="h-5 w-5" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-black uppercase tracking-wide text-slate-500">{n.title}</p>
+                  <p className="mt-0.5 text-sm font-semibold text-slate-900">{n.body}</p>
+                  <p className="mt-1 text-[11px] font-bold text-slate-400">{formatPostTime(n.createdAt)}</p>
+                </div>
+              </Link>
+            </li>
+          ))
+        )}
+      </ul>
     </AppPageShell>
   );
 }

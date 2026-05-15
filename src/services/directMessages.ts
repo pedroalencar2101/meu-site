@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import type { Timestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { notifyDirectMessage } from './notifications';
 
 const COL = 'directMessages';
 
@@ -26,7 +27,12 @@ export function threadIdFor(a: string, b: string): string {
   return [a, b].sort().join('__');
 }
 
-export async function sendDirectMessage(params: { fromId: string; toId: string; text: string }): Promise<void> {
+export async function sendDirectMessage(params: {
+  fromId: string;
+  toId: string;
+  text: string;
+  fromDisplayName?: string;
+}): Promise<void> {
   const text = params.text.trim();
   if (!text) return;
   const threadId = threadIdFor(params.fromId, params.toId);
@@ -37,6 +43,13 @@ export async function sendDirectMessage(params: { fromId: string; toId: string; 
     threadId,
     createdAt: serverTimestamp(),
   });
+  const name = params.fromDisplayName?.trim() || 'Alguém';
+  await notifyDirectMessage({
+    toId: params.toId,
+    fromId: params.fromId,
+    fromName: name,
+    preview: text,
+  }).catch((e) => console.error('notifyDirectMessage', e));
 }
 
 export function subscribeThread(

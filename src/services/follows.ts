@@ -3,8 +3,8 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -43,15 +43,25 @@ export async function isFollowing(followerId: string, followingId: string): Prom
   return s.exists();
 }
 
+/** IDs dos utilizadores que seguem `followingId`. */
+export async function getFollowerUserIds(followingId: string): Promise<string[]> {
+  const q = query(collection(db, COL), where('followingId', '==', followingId));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => (d.data() as { followerId: string }).followerId);
+}
+
 /** IDs dos utilizadores que `followerId` segue. */
 export function subscribeFollowingIds(followerId: string, onIds: (ids: string[]) => void, onError?: (e: Error) => void): Unsubscribe {
-  const q = query(collection(db, COL), where('followerId', '==', followerId), orderBy('createdAt', 'desc'));
+  const q = query(collection(db, COL), where('followerId', '==', followerId));
   return onSnapshot(
     q,
     (snap) => {
       onIds(snap.docs.map((d) => (d.data() as { followingId: string }).followingId));
     },
-    (err) => onError?.(err as Error)
+    (err) => {
+      console.error(err);
+      onError?.(err as Error);
+    }
   );
 }
 
@@ -61,7 +71,7 @@ export function subscribeFollowersOf(
   onList: (rows: FollowDoc[]) => void,
   onError?: (e: Error) => void
 ): Unsubscribe {
-  const q = query(collection(db, COL), where('followingId', '==', followingId), orderBy('createdAt', 'desc'));
+  const q = query(collection(db, COL), where('followingId', '==', followingId));
   return onSnapshot(
     q,
     (snap) => {
@@ -72,7 +82,10 @@ export function subscribeFollowersOf(
         })
       );
     },
-    (err) => onError?.(err as Error)
+    (err) => {
+      console.error(err);
+      onError?.(err as Error);
+    }
   );
 }
 
@@ -82,7 +95,7 @@ export function subscribeFollowingOf(
   onList: (rows: FollowDoc[]) => void,
   onError?: (e: Error) => void
 ): Unsubscribe {
-  const q = query(collection(db, COL), where('followerId', '==', followerId), orderBy('createdAt', 'desc'));
+  const q = query(collection(db, COL), where('followerId', '==', followerId));
   return onSnapshot(
     q,
     (snap) => {
@@ -93,6 +106,9 @@ export function subscribeFollowingOf(
         })
       );
     },
-    (err) => onError?.(err as Error)
+    (err) => {
+      console.error(err);
+      onError?.(err as Error);
+    }
   );
 }

@@ -8,25 +8,23 @@ import {
   MessageCircle,
   Bell,
   Settings,
-  MoreHorizontal,
-  ThumbsUp,
-  ThumbsDown,
-  Share2,
   Send,
   Film,
-  Trash2,
   UserRoundSearch,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { User } from 'firebase/auth';
 import type { UiPost } from '../types/feed';
+import { useLiveUserCard } from '../hooks/useLiveUserCard';
 import { useNoctalFeed } from '../hooks/useNoctalFeed';
-import { formatPostTime } from '../utils/formatPostTime';
-import { sharePostContent } from '../utils/sharePost';
 import CommentsModal from '../components/CommentsModal';
 import MobileBottomNav from '../components/MobileBottomNav';
+import ConfirmModal from '../components/ConfirmModal';
 import { deletePost } from '../services/feedPosts';
+import { subscribeMyNotifications } from '../services/notifications';
+import FeedPost from '../components/FeedPost';
+import ShareModal from '../components/ShareModal';
 
 type TmdbMovie = { id: number; title: string; poster_path: string | null };
 
@@ -53,13 +51,17 @@ export default function NoctalFeed() {
   const [newPostText, setNewPostText] = useState('');
   const [isSubmittingPost, setIsSubmittingPost] = useState(false);
   const [commentsPostId, setCommentsPostId] = useState<string | null>(null);
-  const [postMenuId, setPostMenuId] = useState<string | null>(null);
+  const [confirmDeletePostId, setConfirmDeletePostId] = useState<string | null>(null);
+  const [sharePost, setSharePost] = useState<{ id: string; content: string } | null>(null);
 
   const displayName = user?.displayName || user?.email || 'Utilizador';
   const myInitials = initialsFromUser(user);
+  const liveMe = useLiveUserCard(user?.uid);
+  const navAvatarSrc = liveMe?.photo || user?.photoURL || null;
+  const navAvatarInitials = liveMe?.initials || myInitials;
+  const composerDisplayName = liveMe?.label?.trim() || displayName;
 
-  const profileOrMessagePath = (authorId: string) =>
-    user?.uid === authorId ? '/profile' : `/u/${authorId}`;
+  const [notifUnread, setNotifUnread] = useState(0);
 
   useEffect(() => {
     const fetchMovies = async () => {
@@ -84,10 +86,16 @@ export default function NoctalFeed() {
   }, []);
 
   useEffect(() => {
-    const onDoc = () => setPostMenuId(null);
-    window.addEventListener('click', onDoc);
-    return () => window.removeEventListener('click', onDoc);
-  }, []);
+    if (!user?.uid) {
+      const t = setTimeout(() => setNotifUnread(0), 0);
+      return () => clearTimeout(t);
+    }
+    return subscribeMyNotifications(
+      user.uid,
+      (list) => setNotifUnread(list.filter((n) => !n.read).length),
+      (e) => console.error(e)
+    );
+  }, [user?.uid]);
 
   const q = searchQuery.trim().toLowerCase();
   const filteredPosts: UiPost[] = posts.filter(
@@ -112,18 +120,12 @@ export default function NoctalFeed() {
     }
   };
 
-  const onShare = (text: string) => {
-    void sharePostContent(text, typeof window !== 'undefined' ? window.location.href : undefined);
-  };
-
   const openComments = (postId: string) => {
     setCommentsPostId(postId);
-    setPostMenuId(null);
   };
 
   const handleDeletePost = async (postId: string) => {
     if (!user) return;
-    if (!window.confirm('Apagar este post para sempre?')) return;
     try {
       await deletePost(postId, user.uid);
       if (commentsPostId === postId) setCommentsPostId(null);
@@ -131,7 +133,7 @@ export default function NoctalFeed() {
       console.error(err);
       alert('Não foi possível apagar o post. Verifica as regras do Firestore.');
     } finally {
-      setPostMenuId(null);
+      setConfirmDeletePostId(null);
     }
   };
 
@@ -206,22 +208,27 @@ export default function NoctalFeed() {
             </Link>
             <Link
               to="/notificacoes"
-              className="rounded-full bg-[#f0f2f5] p-2 text-slate-700 transition-all hover:bg-slate-200 sm:p-2.5"
+              className="relative rounded-full bg-[#f0f2f5] p-2 text-slate-700 transition-all hover:bg-slate-200 sm:p-2.5"
               aria-label="Notificações"
             >
               <Bell className="h-5 w-5" />
+              {notifUnread > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex min-h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-black leading-none text-white ring-2 ring-white">
+                  {notifUnread > 99 ? '99+' : notifUnread}
+                </span>
+              )}
             </Link>
             <Link to="/profile" className="ml-0.5 flex shrink-0 rounded-full transition-all hover:bg-slate-100 sm:ml-1">
-              {user?.photoURL ? (
+              {navAvatarSrc ? (
                 <img
-                  src={user.photoURL}
-                  alt={displayName}
+                  src={navAvatarSrc}
+                  alt={composerDisplayName}
                   referrerPolicy="no-referrer"
                   className="h-9 w-9 rounded-full border border-slate-300 object-cover shadow-sm sm:h-10 sm:w-10"
                 />
               ) : (
                 <div className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-300 bg-gradient-to-tr from-slate-700 to-slate-900 text-xs font-bold text-white shadow-sm sm:h-10 sm:w-10 sm:text-sm">
-                  {myInitials}
+                  {navAvatarInitials}
                 </div>
               )}
             </Link>
@@ -235,19 +242,19 @@ export default function NoctalFeed() {
             to="/profile"
             className="mb-2 flex cursor-pointer items-center gap-3 rounded-xl border border-transparent p-3 transition-all hover:border-slate-200 hover:bg-white hover:shadow-sm"
           >
-            {user?.photoURL ? (
+            {navAvatarSrc ? (
               <img
-                src={user.photoURL}
-                alt={displayName}
+                src={navAvatarSrc}
+                alt={composerDisplayName}
                 referrerPolicy="no-referrer"
                 className="h-9 w-9 rounded-full border border-slate-200 object-cover"
               />
             ) : (
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-tr from-slate-700 to-slate-900 text-sm font-bold text-white">
-                {myInitials}
+                {navAvatarInitials}
               </div>
             )}
-            <span className="text-[15px] font-bold text-slate-800">{displayName}</span>
+            <span className="text-[15px] font-bold text-slate-800">{composerDisplayName}</span>
           </Link>
 
           <Link
@@ -264,6 +271,14 @@ export default function NoctalFeed() {
           >
             <Star className="h-6 w-6 text-slate-500" />
             <span className="text-[15px] font-semibold">Minhas Avaliações</span>
+          </Link>
+
+          <Link
+            to="/lista-para-ver"
+            className="flex w-full cursor-pointer items-center gap-3 rounded-xl p-3 text-left text-slate-700 transition-colors hover:bg-slate-200/50"
+          >
+            <Film className="h-6 w-6 text-slate-500" />
+            <span className="text-[15px] font-semibold">Lista para ver</span>
           </Link>
 
           <Link
@@ -300,14 +315,15 @@ export default function NoctalFeed() {
             </div>
           )}
 
-          {!error && user && followingCount === 0 && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-              <p className="font-bold">Ainda não segues ninguém.</p>
-              <p className="mt-2 font-medium text-amber-900/90">
-                O feed só mostra os teus posts e os de quem segues. Pesquisa pessoas e clica em Seguir para ver as publicações delas aqui.
+          {!error && user && followingCount === 0 && posts.length === 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-6 text-center shadow-sm">
+              <Users className="mx-auto h-8 w-8 text-slate-400" />
+              <p className="mt-3 text-base font-bold text-slate-900">Seu feed está vazio</p>
+              <p className="mt-2 text-sm text-slate-500">
+                Siga outras pessoas para ver as publicações e avaliações delas aqui.
               </p>
-              <Link to="/explorar" className="mt-3 inline-block text-sm font-black uppercase tracking-wide text-amber-950 underline">
-                Procurar pessoas
+              <Link to="/explorar" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800">
+                <UserRoundSearch className="h-4 w-4" /> Procurar pessoas
               </Link>
             </div>
           )}
@@ -319,10 +335,10 @@ export default function NoctalFeed() {
                   to="/profile"
                   className="flex h-10 w-10 flex-shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-gradient-to-tr from-slate-700 to-slate-900 text-sm font-bold text-white hover:opacity-80"
                 >
-                  {user?.photoURL ? (
-                    <img src={user.photoURL} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                  {navAvatarSrc ? (
+                    <img src={navAvatarSrc} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
-                    myInitials
+                    navAvatarInitials
                   )}
                 </Link>
                 <input
@@ -372,173 +388,17 @@ export default function NoctalFeed() {
             </div>
           )}
 
-          {filteredPosts.map((post) => {
-            const userLiked = post.myReaction === 'like';
-            const userDisliked = post.myReaction === 'dislike';
-            const isMine = user && post.authorId === user.uid;
-            return (
-              <article
-                key={post.id}
-                className="relative mb-2 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
-              >
-                <div className="mb-3 flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <Link
-                      to={profileOrMessagePath(post.authorId)}
-                      className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-200 font-bold text-slate-500 transition-opacity hover:opacity-80"
-                      title={isMine ? 'O teu perfil' : `Perfil de ${post.authorName}`}
-                    >
-                      {post.authorAvatar ? (
-                        <img
-                          src={post.authorAvatar}
-                          alt={post.authorName}
-                          referrerPolicy="no-referrer"
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-tr from-slate-700 to-slate-900 text-sm text-white">
-                          {post.authorInitials}
-                        </div>
-                      )}
-                    </Link>
-                    <div className="flex min-w-0 flex-col">
-                      <h3 className="text-[15px] font-bold text-slate-900">
-                        <Link to={profileOrMessagePath(post.authorId)} className="hover:underline">
-                          {post.authorName}
-                        </Link>{' '}
-                        <span className="text-[14px] font-normal text-slate-500">
-                          {post.movie ? 'avaliou um filme.' : 'atualizou o status.'}
-                        </span>
-                      </h3>
-                      <span className="text-[13px] font-medium text-slate-500">{formatPostTime(post.createdAt)}</span>
-                    </div>
-                  </div>
-                  {isMine && (
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPostMenuId((id) => (id === post.id ? null : post.id));
-                        }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        className="cursor-pointer rounded-full p-2 text-slate-500 transition-colors hover:bg-[#f0f2f5]"
-                        aria-label="Opções do post"
-                      >
-                        <MoreHorizontal className="h-5 w-5" />
-                      </button>
-                      {postMenuId === post.id && (
-                        <div
-                          className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-sm shadow-lg"
-                          onClick={(e) => e.stopPropagation()}
-                          onMouseDown={(e) => e.stopPropagation()}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => void handleDeletePost(post.id)}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-left font-bold text-red-700 hover:bg-red-50"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            Apagar post
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <p className="mb-3 whitespace-pre-wrap text-[15px] leading-relaxed text-slate-800">{post.content}</p>
-
-                {post.movie && (
-                  <div className="mb-4 flex flex-col gap-3 rounded-xl border border-slate-950 bg-gradient-to-br from-slate-800 to-slate-900 p-3 shadow-inner sm:flex-row sm:items-stretch">
-                    <img
-                      src={post.movie.poster}
-                      alt={post.movie.title}
-                      referrerPolicy="no-referrer"
-                      className="mx-auto h-[108px] w-[72px] shrink-0 rounded border border-slate-700 object-cover shadow-[0_4px_12px_rgba(0,0,0,0.5)] sm:mx-0"
-                    />
-                    <div className="flex min-w-0 flex-1 flex-col justify-center text-center sm:text-left">
-                      <h4 className="text-base font-black uppercase tracking-wider text-white sm:text-lg">{post.movie.title}</h4>
-                      <p className="mb-2 text-[13px] font-medium text-slate-300">
-                        {post.movie.year} • {post.movie.genre}
-                      </p>
-                      <div className="flex gap-0.5 text-yellow-400">
-                        {[...Array(5)].map((_, i) => (
-                          <Star
-                            key={i}
-                            className={`h-4 w-4 ${i < post.movie!.rating ? 'fill-current' : 'text-slate-600'} drop-shadow-sm`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {(post.likeCount > 0 || post.dislikeCount > 0 || post.commentCount > 0) && (
-                  <div className="mb-2 flex items-center justify-between border-b border-slate-100 px-1 pb-2 text-[13px] text-slate-500">
-                    <div className="flex gap-3">
-                      {post.likeCount > 0 && (
-                        <span className="flex items-center gap-1">
-                          <ThumbsUp className="h-3 w-3 fill-slate-700 text-slate-700" /> {post.likeCount}
-                        </span>
-                      )}
-                      {post.dislikeCount > 0 && (
-                        <span className="flex items-center gap-1">
-                          <ThumbsDown className="h-3 w-3 fill-red-500 text-red-500" /> {post.dislikeCount}
-                        </span>
-                      )}
-                    </div>
-                    {post.commentCount > 0 && (
-                      <button
-                        type="button"
-                        className="cursor-pointer border-none bg-transparent p-0 font-inherit text-inherit hover:underline"
-                        onClick={() => openComments(post.id)}
-                      >
-                        {post.commentCount} comentários
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                <div className="flex flex-wrap justify-center gap-1 pt-1 sm:flex-nowrap sm:justify-between sm:gap-1">
-                  <button
-                    type="button"
-                    onClick={() => void handleReaction(post.id, 'like')}
-                    className={`flex min-h-[2.75rem] min-w-0 flex-1 basis-[45%] cursor-pointer items-center justify-center gap-1 rounded-lg py-2 text-[12px] font-bold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:basis-auto sm:gap-2 sm:text-[14px] ${
-                      userLiked ? 'bg-slate-200 text-slate-800' : 'text-slate-600 hover:bg-[#f0f2f5]'
-                    }`}
-                  >
-                    <ThumbsUp className={`h-4 w-4 shrink-0 sm:h-5 sm:w-5 ${userLiked ? 'fill-slate-800' : ''}`} />{' '}
-                    <span className="truncate">Curtir</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleReaction(post.id, 'dislike')}
-                    className={`flex min-h-[2.75rem] min-w-0 flex-1 basis-[45%] cursor-pointer items-center justify-center gap-1 rounded-lg py-2 text-[12px] font-bold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-slate-300 sm:basis-auto sm:gap-2 sm:text-[14px] ${
-                      userDisliked ? 'bg-red-50 text-red-600' : 'text-slate-600 hover:bg-[#f0f2f5]'
-                    }`}
-                  >
-                    <ThumbsDown className={`h-4 w-4 shrink-0 sm:h-5 sm:w-5 ${userDisliked ? 'fill-red-600' : ''}`} />{' '}
-                    <span className="truncate">Não curti</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openComments(post.id)}
-                    className="flex min-h-[2.75rem] min-w-0 flex-1 basis-[45%] cursor-pointer items-center justify-center gap-1 rounded-lg py-2 text-[12px] font-bold text-slate-600 outline-none transition-colors hover:bg-[#f0f2f5] focus-visible:ring-2 focus-visible:ring-slate-300 sm:basis-auto sm:gap-2 sm:text-[14px]"
-                  >
-                    <MessageCircle className="h-4 w-4 shrink-0 sm:h-5 sm:w-5" /> <span className="truncate">Comentar</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onShare(post.content)}
-                    className="hidden min-h-[2.75rem] min-w-0 flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg py-2 text-[14px] font-bold text-slate-600 transition-colors hover:bg-[#f0f2f5] sm:flex"
-                  >
-                    <Share2 className="h-5 w-5 shrink-0" /> <span>Compartilhar</span>
-                  </button>
-                </div>
-              </article>
-            );
-          })}
+          {filteredPosts.map((post) => (
+            <FeedPost
+              key={post.id}
+              post={post}
+              currentUserId={user?.uid}
+              onReact={handleReaction}
+              onOpenComments={openComments}
+              onDelete={(id) => setConfirmDeletePostId(id)}
+              onOpenShareModal={(id, content) => setSharePost({ id, content })}
+            />
+          ))}
         </section>
 
         <aside className="sticky top-[4.5rem] hidden h-fit w-full min-w-0 max-w-[280px] flex-col gap-5 xl:flex xl:top-[5.5rem] xl:max-w-[300px]">
@@ -597,16 +457,35 @@ export default function NoctalFeed() {
         </aside>
       </main>
 
+      <ConfirmModal
+        isOpen={!!confirmDeletePostId}
+        title="Apagar Post"
+        message="Tem certeza que quer apagar este post para sempre? Esta ação não pode ser desfeita."
+        confirmLabel="Apagar"
+        onConfirm={() => confirmDeletePostId && handleDeletePost(confirmDeletePostId)}
+        onCancel={() => setConfirmDeletePostId(null)}
+        isDestructive={true}
+      />
       {user && (
-        <CommentsModal
-          open={!!commentsPostId}
-          postId={commentsPostId}
-          postSnippet={commentsSnippet}
-          onClose={() => setCommentsPostId(null)}
-          uid={user.uid}
-          displayName={displayName}
-          myInitials={myInitials}
-        />
+        <>
+          <CommentsModal
+            open={!!commentsPostId}
+            postId={commentsPostId}
+            postSnippet={commentsSnippet}
+            onClose={() => setCommentsPostId(null)}
+            uid={user.uid}
+            displayName={composerDisplayName}
+            myInitials={navAvatarInitials}
+          />
+          <ShareModal
+            open={!!sharePost}
+            onClose={() => setSharePost(null)}
+            postId={sharePost?.id ?? ''}
+            postContent={sharePost?.content ?? ''}
+            currentUserId={user.uid}
+            currentUserDisplayName={composerDisplayName}
+          />
+        </>
       )}
       <MobileBottomNav />
     </div>

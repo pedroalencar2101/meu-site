@@ -23,25 +23,32 @@ import {
   ExternalLink,
   Trash2,
 } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { deleteField, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { onAuthStateChanged, updateProfile, updateEmail } from 'firebase/auth';
 import { auth, db } from '../services/firebase';
 import { useNoctalFeed } from '../hooks/useNoctalFeed';
+import { usePostsByAuthor } from '../hooks/usePostsByAuthor';
 import { useFollowCounts } from '../hooks/useFollowCounts';
 import { buildDisplaySearch } from '../utils/userDisplaySearch';
 import { formatPostTime } from '../utils/formatPostTime';
 import { sharePostContent } from '../utils/sharePost';
 import CommentsModal from '../components/CommentsModal';
 import MobileBottomNav from '../components/MobileBottomNav';
+import FollowButton from '../components/FollowButton';
 import UserListRow from '../components/UserListRow';
 import { deletePost } from '../services/feedPosts';
+import WatchlistHomePanel from '../components/WatchlistHomePanel';
+import { useLiveUserCard } from '../hooks/useLiveUserCard';
 import type { UiPost } from '../types/feed';
 import { subscribeFollowersOf, subscribeFollowingOf, type FollowDoc } from '../services/follows';
 import { deleteMovieReview, subscribeMyMovieReviews } from '../services/movieReviews';
 import type { MovieReview } from '../types/movieReview';
+import ConfirmModal from '../components/ConfirmModal';
+import FeedPost from '../components/FeedPost';
+import ShareModal from '../components/ShareModal';
 import { getTmdbKey, posterUrl, tmdbGet, type TmdbMovieListItem, type TmdbSearchResponse } from '../services/tmdbClient';
 import { imageFileToJpegDataUrl, isAllowedImageUrl } from '../utils/profileMedia';
 import { privacyOn, type ProfilePrivacy } from '../utils/profilePrivacy';
@@ -108,7 +115,14 @@ function firstName(display: string): string {
   return p[0] || 'você';
 }
 
+function initialsFromDisplayName(name: string): string {
+  const p = name.trim().split(/\s+/).filter(Boolean);
+  if (p.length >= 2) return (p[0][0] + p[p.length - 1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase() || '?';
+}
+
 export default function NoctalProfile() {
+  const { uid: routeUid } = useParams<{ uid: string }>();
   const { posts, error, handleCreatePost, handleReaction } = useNoctalFeed();
   const [authUser, setAuthUser] = useState<User | null>(auth.currentUser);
   const migratedDisplaySearch = useRef(false);
@@ -120,6 +134,8 @@ export default function NoctalProfile() {
   const [commentsPostId, setCommentsPostId] = useState<string | null>(null);
   const [postMenuId, setPostMenuId] = useState<string | null>(null);
   const navigate = useNavigate();
+  const [sharePost, setSharePost] = useState<{ id: string; content: string } | null>(null);
+  const [confirmDeletePostId, setConfirmDeletePostId] = useState<string | null>(null);
 
   const [profileTab, setProfileTab] = useState<ProfileTab>('all');
 
@@ -134,6 +150,12 @@ export default function NoctalProfile() {
   const [followingRows, setFollowingRows] = useState<FollowDoc[]>([]);
   const [myReviews, setMyReviews] = useState<MovieReview[]>([]);
   const [deletingReviewTmdbId, setDeletingReviewTmdbId] = useState<number | null>(null);
+  
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   const coverFileRef = useRef<HTMLInputElement>(null);
   const avatarFileRef = useRef<HTMLInputElement>(null);
@@ -162,6 +184,24 @@ export default function NoctalProfile() {
   const [favResults, setFavResults] = useState<TmdbMovieListItem[]>([]);
   const [favLoading, setFavLoading] = useState(false);
 
+  const profileOwnerUid = routeUid ?? authUser?.uid;
+  const isOwnProfile = !!(authUser && profileOwnerUid && authUser.uid === profileOwnerUid);
+  const onOwnProfileRoute = !routeUid;
+
+  const {
+    posts: authorPosts,
+    error: authorPostsError,
+    handleReaction: handleAuthorPostReaction,
+  } = usePostsByAuthor(!isOwnProfile && profileOwnerUid ? profileOwnerUid : undefined);
+
+  const liveViewer = useLiveUserCard(authUser?.uid ?? undefined);
+  const viewerNavAvatarSrc = liveViewer?.photo ?? authUser?.photoURL ?? null;
+  const viewerNavInitials = liveViewer?.initials ?? initialsFromUser(authUser, null);
+  const viewerCommentName = liveViewer?.label?.trim() || authUser?.displayName || authUser?.email || 'Utilizador';
+  const viewerCommentInitials = liveViewer?.initials ?? initialsFromUser(authUser, null);
+
+  const { followers, following } = useFollowCounts(profileOwnerUid);
+
   useEffect(() => {
     return onAuthStateChanged(auth, setAuthUser);
   }, []);
@@ -177,10 +217,29 @@ export default function NoctalProfile() {
   }, []);
 
   useEffect(() => {
+    if (!profileOwnerUid) {
+      setProfile(null);
+      setProfileLoading(false);
+      return;
+    }
+
+    if (!isOwnProfile) {
+      let cancelled = false;
+      setProfileLoading(true);
+      void getDoc(doc(db, 'users', profileOwnerUid)).then((snap) => {
+        if (cancelled) return;
+        setProfile(snap.exists() ? (snap.data() as FirestoreUserProfile) : null);
+        setProfileLoading(false);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const u = authUser;
     if (!u) {
       setProfile(null);
-      setProfileLoading(false);
+      setProfileLoading(true);
       return;
     }
     let cancelled = false;
@@ -222,12 +281,10 @@ export default function NoctalProfile() {
     return () => {
       cancelled = true;
     };
-  }, [authUser]);
-
-  const { followers, following } = useFollowCounts(authUser?.uid);
+  }, [authUser, profileOwnerUid, isOwnProfile]);
 
   useEffect(() => {
-    if (!authUser || !profile || migratedDisplaySearch.current) return;
+    if (!isOwnProfile || !authUser || !profile || migratedDisplaySearch.current) return;
     if (profile.displaySearch) return;
     migratedDisplaySearch.current = true;
     void setDoc(
@@ -241,26 +298,26 @@ export default function NoctalProfile() {
   }, [authUser, profile]);
 
   useEffect(() => {
-    if (!authUser?.uid || profileTab !== 'friends') {
+    if (!profileOwnerUid || profileTab !== 'friends') {
       setFollowerRows([]);
       setFollowingRows([]);
       return;
     }
-    const u1 = subscribeFollowersOf(authUser.uid, setFollowerRows);
-    const u2 = subscribeFollowingOf(authUser.uid, setFollowingRows);
+    const u1 = subscribeFollowersOf(profileOwnerUid, setFollowerRows);
+    const u2 = subscribeFollowingOf(profileOwnerUid, setFollowingRows);
     return () => {
       u1();
       u2();
     };
-  }, [authUser?.uid, profileTab]);
+  }, [profileOwnerUid, profileTab]);
 
   useEffect(() => {
-    if (!authUser?.uid || profileTab !== 'movies') {
+    if (!profileOwnerUid || profileTab !== 'movies') {
       setMyReviews([]);
       return;
     }
-    return subscribeMyMovieReviews(authUser.uid, setMyReviews);
-  }, [authUser?.uid, profileTab]);
+    return subscribeMyMovieReviews(profileOwnerUid, setMyReviews);
+  }, [profileOwnerUid, profileTab]);
 
   useEffect(() => {
     const t = window.setTimeout(() => setFavDebounced(favSearch.trim()), 400);
@@ -295,31 +352,44 @@ export default function NoctalProfile() {
 
   const displayName =
     (profile?.fullName && profile.fullName.trim()) ||
-    authUser?.displayName ||
-    authUser?.email ||
+    (isOwnProfile ? authUser?.displayName || authUser?.email : profile?.email?.split('@')[0]) ||
     'Utilizador';
-  const myInitials = initialsFromUser(authUser, profile?.fullName ?? null);
-  const myPosts = posts.filter((p) => authUser && p.authorId === authUser.uid);
+  const myInitials = isOwnProfile
+    ? initialsFromUser(authUser, profile?.fullName ?? null)
+    : initialsFromDisplayName(displayName);
+
+  const myPostsFromFeed = useMemo(() => {
+    if (!authUser) return [];
+    return posts.filter((p) => p.authorId === authUser.uid);
+  }, [posts, authUser]);
+
+  const displayPosts: UiPost[] = isOwnProfile ? myPostsFromFeed : authorPosts;
+  const postsListError = isOwnProfile ? error : authorPostsError;
+  const reactToPost = isOwnProfile ? handleReaction : handleAuthorPostReaction;
 
   const q = searchQuery.trim().toLowerCase();
-  const filteredMyPosts: UiPost[] = useMemo(() => {
-    if (!q) return myPosts;
-    return myPosts.filter(
+  const filteredDisplayPosts: UiPost[] = useMemo(() => {
+    if (!q) return displayPosts;
+    return displayPosts.filter(
       (post) =>
         post.content.toLowerCase().includes(q) ||
         post.authorName.toLowerCase().includes(q) ||
         (post.movie?.title && post.movie.title.toLowerCase().includes(q))
     );
-  }, [myPosts, q]);
+  }, [displayPosts, q]);
 
   const coverSrc =
     (profile?.coverPhotoDataUrl && profile.coverPhotoDataUrl.trim()) ||
     (profile?.coverPhotoUrl && profile.coverPhotoUrl.trim()) ||
     DEFAULT_COVER;
 
-  const avatarSrc = (profile?.avatarCustomDataUrl && profile.avatarCustomDataUrl.trim()) || authUser?.photoURL || null;
+  const avatarSrc =
+    (profile?.avatarCustomDataUrl && profile.avatarCustomDataUrl.trim()) ||
+    (isOwnProfile ? authUser?.photoURL || null : profile?.photoURL?.trim() || null) ||
+    null;
 
   const memberSinceLabel = useMemo(() => {
+    if (!isOwnProfile) return null;
     const raw = authUser?.metadata?.creationTime;
     if (!raw) return null;
     try {
@@ -327,33 +397,34 @@ export default function NoctalProfile() {
     } catch {
       return null;
     }
-  }, [authUser?.metadata?.creationTime]);
+  }, [isOwnProfile, authUser?.metadata?.creationTime]);
 
   const favoriteList = profile?.favoriteMovies?.length ? profile.favoriteMovies : [];
 
   const hasVisiblePersonalCard =
     (privacyOn(profile, 'showCity') && !!profile?.city?.trim()) ||
-    (privacyOn(profile, 'showEmail') && !!authUser?.email) ||
+    (privacyOn(profile, 'showEmail') &&
+      (isOwnProfile ? !!authUser?.email : !!(profile?.email && profile.email.trim()))) ||
     (privacyOn(profile, 'showPhone') && !!profile?.phone?.trim()) ||
     (privacyOn(profile, 'showWebsite') && !!profile?.website?.trim());
 
   async function handleDeleteMyReview(tmdbId: number, movieLabel: string) {
     if (!authUser) return;
-    if (
-      !window.confirm(
-        `Apagar a tua avaliação de «${movieLabel}»? Isto remove também a publicação no feed.`
-      )
-    )
-      return;
-    setDeletingReviewTmdbId(tmdbId);
-    try {
-      await deleteMovieReview(tmdbId, authUser.uid);
-    } catch (e) {
-      console.error(e);
-      alert('Não foi possível apagar a avaliação.');
-    } finally {
-      setDeletingReviewTmdbId(null);
-    }
+    setConfirmAction({
+      title: 'Apagar avaliação',
+      message: `Tem certeza que deseja apagar a sua avaliação de «${movieLabel}»? Isso também removerá a publicação do feed.`,
+      onConfirm: async () => {
+        setDeletingReviewTmdbId(tmdbId);
+        try {
+          await deleteMovieReview(tmdbId, authUser.uid);
+        } catch (e) {
+          console.error(e);
+          alert('Não foi possível apagar a avaliação.');
+        } finally {
+          setDeletingReviewTmdbId(null);
+        }
+      }
+    });
   }
 
   function openEditModal() {
@@ -555,15 +626,20 @@ export default function NoctalProfile() {
     }
   }
 
-  async function clearCustomAvatar() {
+  function clearCustomAvatar() {
     if (!authUser) return;
-    if (!window.confirm('Remover a foto personalizada e voltar a usar a da conta (se existir)?')) return;
-    setSavingAvatar(true);
-    try {
-      await persistUserPatch({ avatarCustomDataUrl: deleteField() });
-    } finally {
-      setSavingAvatar(false);
-    }
+    setConfirmAction({
+      title: 'Remover foto',
+      message: 'Remover a foto personalizada e voltar a usar a foto padrão da conta?',
+      onConfirm: async () => {
+        setSavingAvatar(true);
+        try {
+          await persistUserPatch({ avatarCustomDataUrl: deleteField() });
+        } finally {
+          setSavingAvatar(false);
+        }
+      }
+    });
   }
 
   async function addFavoriteMovie(m: TmdbMovieListItem) {
@@ -608,7 +684,6 @@ export default function NoctalProfile() {
 
   const handleDeletePost = async (postId: string) => {
     if (!authUser) return;
-    if (!window.confirm('Apagar este post para sempre?')) return;
     try {
       await deletePost(postId, authUser.uid);
       if (commentsPostId === postId) setCommentsPostId(null);
@@ -616,7 +691,7 @@ export default function NoctalProfile() {
       console.error(err);
       alert('Não foi possível apagar o post. Verifica as regras do Firestore.');
     } finally {
-      setPostMenuId(null);
+      setConfirmDeletePostId(null);
     }
   };
 
@@ -671,7 +746,9 @@ export default function NoctalProfile() {
             </Link>
             <Link
               to="/profile"
-              className="flex min-h-[2.75rem] min-w-[2.75rem] items-center justify-center rounded-xl border-b-[3px] border-slate-800 text-slate-800 transition-colors hover:bg-white/90"
+              className={`flex min-h-[2.75rem] min-w-[2.75rem] items-center justify-center rounded-xl transition-colors hover:bg-white/90 ${
+                onOwnProfileRoute ? 'border-b-[3px] border-slate-800 text-slate-800' : 'text-slate-500'
+              }`}
               title="Perfil"
             >
               <Users className="h-6 w-6" />
@@ -708,16 +785,16 @@ export default function NoctalProfile() {
               <Bell className="h-5 w-5" />
             </Link>
             <Link to="/profile" className="ml-0.5 flex shrink-0 rounded-full transition-all hover:bg-slate-100 sm:ml-1">
-              {avatarSrc ? (
+              {viewerNavAvatarSrc ? (
                 <img
-                  src={avatarSrc}
-                  alt={displayName}
+                  src={viewerNavAvatarSrc}
+                  alt=""
                   referrerPolicy="no-referrer"
                   className="h-9 w-9 rounded-full border border-slate-300 object-cover shadow-sm sm:h-10 sm:w-10"
                 />
               ) : (
                 <div className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-300 bg-gradient-to-tr from-slate-700 to-slate-900 text-xs font-bold text-white shadow-sm sm:h-10 sm:w-10 sm:text-sm">
-                  {myInitials}
+                  {viewerNavInitials}
                 </div>
               )}
             </Link>
@@ -739,14 +816,16 @@ export default function NoctalProfile() {
                 className="h-full w-full object-cover"
               />
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/15" />
-              <button
-                type="button"
-                onClick={() => openCoverEditor()}
-                className="absolute right-3 top-3 z-30 flex items-center gap-2 rounded-xl border border-white/20 bg-black/55 px-3 py-2 text-xs font-black uppercase tracking-wide text-white shadow-lg backdrop-blur-sm transition hover:bg-black/70 sm:text-sm"
-              >
-                {savingCover ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-                Editar capa
-              </button>
+              {isOwnProfile && (
+                <button
+                  type="button"
+                  onClick={() => openCoverEditor()}
+                  className="absolute right-3 top-3 z-30 flex items-center gap-2 rounded-xl border border-white/20 bg-black/55 px-3 py-2 text-xs font-black uppercase tracking-wide text-white shadow-lg backdrop-blur-sm transition hover:bg-black/70 sm:text-sm"
+                >
+                  {savingCover ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                  Editar capa
+                </button>
+              )}
             </div>
 
             <div className="relative z-10 -mt-12 px-0 sm:-mt-16">
@@ -762,15 +841,17 @@ export default function NoctalProfile() {
                       </div>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => avatarFileRef.current?.click()}
-                    disabled={savingAvatar}
-                    className="absolute bottom-1 right-1 rounded-full border-2 border-white bg-slate-100 p-2 text-slate-700 shadow-md transition-colors hover:bg-slate-200 disabled:opacity-50"
-                    title="Alterar foto de perfil"
-                  >
-                    {savingAvatar ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-                  </button>
+                  {isOwnProfile && (
+                    <button
+                      type="button"
+                      onClick={() => avatarFileRef.current?.click()}
+                      disabled={savingAvatar}
+                      className="absolute bottom-1 right-1 rounded-full border-2 border-white bg-slate-100 p-2 text-slate-700 shadow-md transition-colors hover:bg-slate-200 disabled:opacity-50"
+                      title="Alterar foto de perfil"
+                    >
+                      {savingAvatar ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -783,67 +864,96 @@ export default function NoctalProfile() {
                   <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-600 sm:mx-0 sm:mr-auto">{profile.bio.trim()}</p>
                 ) : (
                   <p className="mt-2 text-sm font-medium text-slate-500">
-                    {memberSinceLabel ? `Membro desde ${memberSinceLabel}` : 'Membro Noctal'}
+                    {isOwnProfile && memberSinceLabel
+                      ? `Membro desde ${memberSinceLabel}`
+                      : isOwnProfile
+                        ? 'Membro Noctal'
+                        : profile
+                          ? 'Membro Noctal'
+                          : 'Perfil ainda sem dados públicos.'}
                   </p>
                 )}
-                {authUser && (
+                {profileOwnerUid && (
                   <div className="mt-4 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+                    {isOwnProfile && (
+                      <Link
+                        to={`/u/${profileOwnerUid}`}
+                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-slate-800 hover:bg-white"
+                      >
+                        Ver público
+                      </Link>
+                    )}
                     <Link
-                      to={`/u/${authUser.uid}`}
-                      className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-slate-800 hover:bg-white"
+                      to={`/u/${profileOwnerUid}/seguidores`}
+                      className="flex items-center gap-1.5 rounded-full border border-slate-300 bg-gradient-to-b from-slate-100 to-slate-200 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-slate-700 shadow-sm transition hover:from-slate-200 hover:to-slate-300"
                     >
-                      Ver público
+                      <span className="text-slate-900">{followers}</span> seguidores
                     </Link>
                     <Link
-                      to={`/u/${authUser.uid}/seguidores`}
-                      className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-white shadow-sm hover:bg-slate-800"
+                      to={`/u/${profileOwnerUid}/seguindo`}
+                      className="flex items-center gap-1.5 rounded-full border border-slate-300 bg-gradient-to-b from-slate-100 to-slate-200 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-slate-700 shadow-sm transition hover:from-slate-200 hover:to-slate-300"
                     >
-                      {followers} seguidores
+                      <span className="text-slate-900">{following}</span> seguindo
                     </Link>
-                    <Link
-                      to={`/u/${authUser.uid}/seguindo`}
-                      className="rounded-full bg-violet-600 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-white shadow-sm hover:bg-violet-700"
-                    >
-                      {following} seguindo
-                    </Link>
-                    <Link
-                      to="/explorar"
-                      className="rounded-full border border-amber-300/80 bg-amber-50 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-amber-950 hover:bg-amber-100"
-                    >
-                      Procurar pessoas
-                    </Link>
+                    {authUser && (
+                      <Link
+                        to="/explorar"
+                        className="rounded-full border border-amber-300/80 bg-amber-50 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-amber-950 hover:bg-amber-100"
+                      >
+                        Procurar pessoas
+                      </Link>
+                    )}
                   </div>
                 )}
 
                 <div className="mt-5 flex flex-wrap items-center justify-center gap-2 border-t border-slate-100 pt-4 sm:justify-start">
-                  <button
-                    type="button"
-                    onClick={() => navigate('/em-cartaz')}
-                    className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-slate-800"
-                  >
-                    <Film className="h-4 w-4" /> Avaliar filme
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openCoverEditor()}
-                    disabled={savingCover}
-                    className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
-                  >
-                    <Camera className="h-4 w-4" /> Capa
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openEditModal()}
-                    className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 shadow-sm transition hover:bg-slate-50"
-                  >
-                    <Edit3 className="h-4 w-4" /> Editar perfil
-                  </button>
-                  <Link
-                    to="/configuracoes"
-                    className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-bold text-slate-800 transition hover:bg-slate-100"
-                  >
-                    <Settings className="h-4 w-4" /> Definições
-                  </Link>
+                  {isOwnProfile ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => navigate('/em-cartaz')}
+                        className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-slate-800"
+                      >
+                        <Film className="h-4 w-4" /> Avaliar filme
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openCoverEditor()}
+                        disabled={savingCover}
+                        className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        <Camera className="h-4 w-4" /> Capa
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEditModal()}
+                        className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 shadow-sm transition hover:bg-slate-50"
+                      >
+                        <Edit3 className="h-4 w-4" /> Editar perfil
+                      </button>
+                      <Link
+                        to="/configuracoes"
+                        className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-bold text-slate-800 transition hover:bg-slate-100"
+                      >
+                        <Settings className="h-4 w-4" /> Definições
+                      </Link>
+                    </>
+                  ) : (
+                    authUser &&
+                    profileOwnerUid &&
+                    authUser.uid !== profileOwnerUid && (
+                      <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
+                        <FollowButton viewerId={authUser.uid} targetId={profileOwnerUid} className="px-6 py-2.5" />
+                        <Link
+                          to={`/mensagens/${profileOwnerUid}`}
+                          className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-5 py-2.5 text-sm font-black uppercase tracking-wide text-violet-800 shadow-sm transition hover:bg-violet-100"
+                        >
+                          <Send className="h-4 w-4" />
+                          Mensagem
+                        </Link>
+                      </div>
+                    )
+                  )}
                 </div>
               </div>
             </div>
@@ -862,8 +972,8 @@ export default function NoctalProfile() {
         {profileTab === 'all' && (
           <div className="flex w-full min-w-0 flex-col gap-4 md:flex-row">
             <div className="flex w-full flex-col gap-4 md:w-[360px]">
-              {error && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{error}</div>
+              {postsListError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{postsListError}</div>
               )}
 
               <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
@@ -880,10 +990,11 @@ export default function NoctalProfile() {
                         </span>
                       </div>
                     )}
-                    {privacyOn(profile, 'showEmail') && authUser?.email && (
+                    {privacyOn(profile, 'showEmail') &&
+                      (isOwnProfile ? !!authUser?.email : !!(profile?.email && profile.email.trim())) && (
                       <div className="flex flex-col gap-1 text-[15px] text-slate-800">
                         <span className="text-xs font-bold uppercase tracking-wide text-slate-500">E-mail</span>
-                        <span>{authUser.email}</span>
+                        <span>{isOwnProfile ? authUser?.email : profile?.email?.trim()}</span>
                       </div>
                     )}
                     {privacyOn(profile, 'showPhone') && profile?.phone?.trim() && (
@@ -911,7 +1022,9 @@ export default function NoctalProfile() {
                     )}
                     {!profileLoading && !hasVisiblePersonalCard && (
                       <p className="text-sm font-medium text-slate-500">
-                        Nenhum dado visível aqui. Preenche campos e escolhe o que mostrar em &quot;Editar perfil&quot;.
+                        {isOwnProfile
+                          ? 'Nenhum dado visível aqui. Preenche campos e escolhe o que mostrar em "Editar perfil".'
+                          : 'Este utilizador não partilhou dados pessoais aqui.'}
                       </p>
                     )}
                   </div>
@@ -932,13 +1045,15 @@ export default function NoctalProfile() {
                       </div>
                     </>
                   )}
-                <button
-                  type="button"
-                  onClick={() => openEditModal()}
-                  className="mt-6 w-full rounded-lg bg-[#f0f2f5] py-2 text-[15px] font-bold text-slate-800 transition-colors hover:bg-slate-200"
-                >
-                  Editar detalhes
-                </button>
+                {isOwnProfile && (
+                  <button
+                    type="button"
+                    onClick={() => openEditModal()}
+                    className="mt-6 w-full rounded-lg bg-[#f0f2f5] py-2 text-[15px] font-bold text-slate-800 transition-colors hover:bg-slate-200"
+                  >
+                    Editar detalhes
+                  </button>
+                )}
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
@@ -964,230 +1079,93 @@ export default function NoctalProfile() {
                       )}
                     </Link>
                   ))}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFavSearch('');
-                      setFavResults([]);
-                      setFavoritesModalOpen(true);
-                    }}
-                    className="flex aspect-[2/3] cursor-pointer items-center justify-center rounded-md border-2 border-dashed border-slate-300 bg-[#f0f2f5] transition-colors hover:bg-slate-200"
-                    title="Adicionar filme"
-                  >
-                    <Plus className="h-6 w-6 text-slate-400" />
-                  </button>
+                  {isOwnProfile && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFavSearch('');
+                        setFavResults([]);
+                        setFavoritesModalOpen(true);
+                      }}
+                      className="flex aspect-[2/3] cursor-pointer items-center justify-center rounded-md border-2 border-dashed border-slate-300 bg-[#f0f2f5] transition-colors hover:bg-slate-200"
+                      title="Adicionar filme"
+                    >
+                      <Plus className="h-6 w-6 text-slate-400" />
+                    </button>
+                  )}
                 </div>
-                {!getTmdbKey() && (
+                {isOwnProfile && !getTmdbKey() && (
                   <p className="mt-2 text-xs font-medium text-amber-800">Define VITE_TMDB_API_KEY para pesquisar filmes.</p>
                 )}
               </div>
             </div>
 
             <div className="flex min-w-0 flex-1 flex-col gap-4">
-          <div className="bg-white rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.05)] border border-slate-200 p-4">
-            <form id="noctal-profile-create-post" onSubmit={onCreatePost}>
-              <div className="flex gap-2 items-center mb-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-tr from-slate-700 to-slate-900 text-sm font-bold text-white">
-                  {avatarSrc ? (
-                    <img src={avatarSrc} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
-                  ) : (
-                    myInitials
-                  )}
+              {isOwnProfile && (
+                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+                  <form id="noctal-profile-create-post" onSubmit={onCreatePost}>
+                    <div className="mb-3 flex items-center gap-2">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-tr from-slate-700 to-slate-900 text-sm font-bold text-white">
+                        {avatarSrc ? (
+                          <img src={avatarSrc} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          myInitials
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        name="profile-new-post"
+                        autoComplete="off"
+                        value={newPostText}
+                        onChange={(e) => setNewPostText(e.target.value)}
+                        placeholder={`Em que estás a pensar, ${firstName(displayName)}?`}
+                        disabled={!authUser}
+                        className="w-full cursor-text rounded-full border border-transparent bg-[#f0f2f5] py-2.5 px-4 text-[15px] font-medium text-slate-700 outline-none transition-colors hover:bg-slate-200 focus:border-slate-200 disabled:opacity-50"
+                      />
+                    </div>
+                    <div className="flex justify-end border-t border-slate-100 pt-3">
+                      <button
+                        type="submit"
+                        disabled={!newPostText.trim() || !authUser || isSubmittingPost}
+                        className={`flex items-center gap-2 rounded-lg px-4 py-2 text-[14px] font-bold ${
+                          newPostText.trim() && authUser && !isSubmittingPost
+                            ? 'bg-slate-800 text-white hover:bg-slate-900'
+                            : 'cursor-not-allowed bg-gray-100 text-gray-400'
+                        }`}
+                      >
+                        <Send className="h-4 w-4" />
+                        {isSubmittingPost ? 'A enviar…' : 'Publicar'}
+                      </button>
+                    </div>
+                  </form>
                 </div>
-                <input
-                  type="text"
-                  name="profile-new-post"
-                  autoComplete="off"
-                  value={newPostText}
-                  onChange={(e) => setNewPostText(e.target.value)}
-                  placeholder={`Em que estás a pensar, ${firstName(displayName)}?`}
-                  disabled={!authUser}
-                  className="w-full bg-[#f0f2f5] hover:bg-slate-200 transition-colors rounded-full py-2.5 px-4 outline-none text-[15px] text-slate-700 cursor-text font-medium disabled:opacity-50"
-                />
-              </div>
-              <div className="border-t border-slate-100 pt-3 flex justify-end">
-                <button
-                  type="submit"
-                  disabled={!newPostText.trim() || !authUser || isSubmittingPost}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-[14px] ${
-                    newPostText.trim() && authUser && !isSubmittingPost
-                      ? 'bg-slate-800 text-white hover:bg-slate-900'
-                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  }`}
-                >
-                  <Send className="w-4 h-4" />
-                  {isSubmittingPost ? 'A enviar…' : 'Publicar'}
-                </button>
-              </div>
-            </form>
-          </div>
+              )}
 
-          <div className="bg-white rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.05)] border border-slate-200 p-4 flex justify-between items-center">
-            <h2 className="font-bold text-xl text-slate-900">Os meus posts</h2>
-          </div>
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+                <h2 className="text-xl font-bold text-slate-900">{isOwnProfile ? 'Os meus posts' : 'Posts'}</h2>
+              </div>
 
-          {filteredMyPosts.length === 0 && (
+          {filteredDisplayPosts.length === 0 && (
             <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm font-medium text-slate-500">
               {q
                 ? 'Nenhum post corresponde à pesquisa.'
-                : 'Ainda não tens posts públicos. Publica algo acima ou volta ao feed.'}
+                : isOwnProfile
+                  ? 'Ainda não tens posts públicos. Publica algo acima ou volta ao feed.'
+                  : 'Ainda não há posts públicos aqui.'}
             </div>
           )}
 
-          {filteredMyPosts.map((post: UiPost) => {
-            const userLiked = post.myReaction === 'like';
-            const userDisliked = post.myReaction === 'dislike';
-            return (
-              <article
-                key={post.id}
-                className="bg-white rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.05)] border border-slate-200 p-4 mb-2"
-              >
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex gap-2 items-center">
-                    <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden border border-slate-200 flex items-center justify-center font-bold text-slate-500 shadow-sm">
-                      {post.authorAvatar ? (
-                        <img
-                          src={post.authorAvatar}
-                          alt={post.authorName}
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-gradient-to-tr from-slate-700 to-slate-900 text-white flex items-center justify-center text-sm">
-                          {post.authorInitials}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex flex-col">
-                      <h3 className="font-bold text-slate-900 text-[15px]">{post.authorName}</h3>
-                      <span className="text-[13px] text-slate-500 font-medium">{formatPostTime(post.createdAt)}</span>
-                    </div>
-                  </div>
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setPostMenuId((id) => (id === post.id ? null : post.id));
-                      }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      className="text-slate-500 hover:bg-[#f0f2f5] p-2 rounded-full transition-colors cursor-pointer"
-                    >
-                      <MoreHorizontal className="w-5 h-5" />
-                    </button>
-                    {postMenuId === post.id && (
-                      <div
-                        className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-sm shadow-lg"
-                        onClick={(e) => e.stopPropagation()}
-                        onMouseDown={(e) => e.stopPropagation()}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => void handleDeletePost(post.id)}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left font-bold text-red-700 hover:bg-red-50"
-                        >
-                          Apagar post
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <p className="text-[15px] text-slate-800 mb-3 leading-relaxed whitespace-pre-wrap">{post.content}</p>
-
-                {post.movie && (
-                  <div className="flex gap-4 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-950 rounded-xl p-3 mb-4 shadow-inner">
-                    <img
-                      src={post.movie.poster}
-                      alt={post.movie.title}
-                      referrerPolicy="no-referrer"
-                      className="w-[72px] h-[108px] object-cover rounded shadow-[0_4px_12px_rgba(0,0,0,0.5)] border border-slate-700"
-                    />
-                    <div className="flex flex-col justify-center">
-                      <h4 className="font-black text-white text-lg uppercase tracking-wider">{post.movie.title}</h4>
-                      <p className="text-[13px] text-slate-300 mb-2 font-medium">
-                        {post.movie.year} • {post.movie.genre}
-                      </p>
-                      <div className="flex text-yellow-400 gap-0.5">
-                        {[...Array(5)].map((_, i) => (
-                          <Star
-                            key={i}
-                            className={`w-4 h-4 ${i < post.movie!.rating ? 'fill-current' : 'text-slate-600'} drop-shadow-sm`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {(post.likeCount > 0 || post.dislikeCount > 0 || post.commentCount > 0) && (
-                  <div className="flex justify-between items-center text-[13px] text-slate-500 mb-2 px-1 border-b border-slate-100 pb-2">
-                    <div className="flex gap-3">
-                      {post.likeCount > 0 && (
-                        <span className="flex items-center gap-1">
-                          <ThumbsUp className="w-3 h-3 text-slate-700 fill-slate-700" /> {post.likeCount}
-                        </span>
-                      )}
-                      {post.dislikeCount > 0 && (
-                        <span className="flex items-center gap-1">
-                          <ThumbsDown className="w-3 h-3 text-red-500 fill-red-500" /> {post.dislikeCount}
-                        </span>
-                      )}
-                    </div>
-                    {post.commentCount > 0 && (
-                      <button
-                        type="button"
-                        className="hover:underline cursor-pointer bg-transparent border-none p-0 font-inherit text-inherit"
-                        onClick={() => setCommentsPostId(post.id)}
-                      >
-                        {post.commentCount} comentários
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                <div className="flex justify-between gap-2 border-t border-slate-100 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleReaction(post.id, 'like')}
-                    className={`flex items-center gap-2 py-2 rounded-lg flex-1 justify-center transition-colors font-bold text-[14px] ${
-                      userLiked ? 'text-slate-800 bg-slate-200' : 'text-slate-600 hover:bg-[#f0f2f5]'
-                    }`}
-                  >
-                    <ThumbsUp className={`w-5 h-5 ${userLiked ? 'fill-slate-800' : ''}`} />
-                    <span>Curtir</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleReaction(post.id, 'dislike')}
-                    className={`flex items-center gap-2 py-2 rounded-lg flex-1 justify-center transition-colors font-bold text-[14px] ${
-                      userDisliked ? 'text-red-600 bg-red-50' : 'text-slate-600 hover:bg-[#f0f2f5]'
-                    }`}
-                  >
-                    <ThumbsDown className={`w-5 h-5 ${userDisliked ? 'fill-red-600' : ''}`} />
-                    <span>Não curti</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCommentsPostId(post.id)}
-                    className="flex items-center gap-2 text-slate-600 hover:bg-[#f0f2f5] py-2 rounded-lg flex-1 justify-center transition-colors font-bold text-[14px]"
-                  >
-                    <MessageCircle className="w-5 h-5" />
-                    <span>Comentar</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onShare(post.content)}
-                    className="hidden sm:flex items-center gap-2 text-slate-600 hover:bg-[#f0f2f5] py-2 rounded-lg flex-1 justify-center transition-colors font-bold text-[14px]"
-                  >
-                    <Share2 className="w-5 h-5" />
-                    <span>Partilhar</span>
-                  </button>
-                </div>
-
-              </article>
-            );
-          })}
+          {filteredDisplayPosts.map((post: UiPost) => (
+            <FeedPost
+              key={post.id}
+              post={post}
+              currentUserId={authUser?.uid}
+              onReact={reactToPost}
+              onOpenComments={(id) => setCommentsPostId(id)}
+              onDelete={isOwnProfile ? (id) => setConfirmDeletePostId(id) : undefined}
+              onOpenShareModal={(id, content) => setSharePost({ id, content })}
+            />
+          ))}
             </div>
           </div>
         )}
@@ -1195,9 +1173,12 @@ export default function NoctalProfile() {
         {profileTab === 'about' && (
           <div className="mx-auto w-full max-w-2xl space-y-4">
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-black text-slate-900">Sobre ti</h2>
+              <h2 className="text-lg font-black text-slate-900">{isOwnProfile ? 'Sobre ti' : 'Sobre'}</h2>
               <p className="mt-3 text-sm font-medium leading-relaxed text-slate-600">
-                {profile?.bio?.trim() || 'Ainda não escreveste uma bio. Usa “Editar perfil” para te apresentares à comunidade.'}
+                {profile?.bio?.trim() ||
+                  (isOwnProfile
+                    ? 'Ainda não escreveste uma bio. Usa "Editar perfil" para te apresentares à comunidade.'
+                    : 'Sem bio pública.')}
               </p>
               <dl className="mt-6 space-y-3 text-sm">
                 {profile?.username?.trim() && (
@@ -1212,10 +1193,13 @@ export default function NoctalProfile() {
                     <dd className="text-right font-medium text-slate-900">{profile.city.trim()}</dd>
                   </div>
                 )}
-                {privacyOn(profile, 'showEmail') && authUser?.email && (
+                {privacyOn(profile, 'showEmail') &&
+                  (isOwnProfile ? authUser?.email : profile?.email?.trim()) && (
                   <div className="flex justify-between gap-4 border-t border-slate-100 pt-3">
                     <dt className="font-bold text-slate-500">E-mail</dt>
-                    <dd className="text-right font-medium text-slate-900">{authUser.email}</dd>
+                    <dd className="text-right font-medium text-slate-900">
+                      {isOwnProfile ? authUser?.email : profile?.email?.trim()}
+                    </dd>
                   </div>
                 )}
                 {privacyOn(profile, 'showPhone') && profile?.phone?.trim() && (
@@ -1260,24 +1244,26 @@ export default function NoctalProfile() {
                   </div>
                 )}
               </dl>
-              <button
-                type="button"
-                onClick={() => openEditModal()}
-                className="mt-6 w-full rounded-xl bg-slate-900 py-3 text-sm font-black uppercase tracking-wide text-white hover:bg-slate-800"
-              >
-                Editar informações
-              </button>
+              {isOwnProfile && (
+                <button
+                  type="button"
+                  onClick={() => openEditModal()}
+                  className="mt-6 w-full rounded-xl bg-slate-900 py-3 text-sm font-black uppercase tracking-wide text-white hover:bg-slate-800"
+                >
+                  Editar informações
+                </button>
+              )}
             </div>
           </div>
         )}
 
-        {profileTab === 'friends' && authUser && (
+        {profileTab === 'friends' && profileOwnerUid && (
           <div className="mx-auto flex min-h-[52vh] w-full max-w-3xl flex-col justify-center py-12 md:min-h-[56vh]">
             <div className="grid w-full gap-4 md:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-4 py-3">
                 <h2 className="text-sm font-black uppercase tracking-wide text-slate-800">Seguidores</h2>
-                <Link to={`/u/${authUser.uid}/seguidores`} className="mt-1 inline-block text-xs font-bold text-amber-800 underline">
+                <Link to={`/u/${profileOwnerUid}/seguidores`} className="mt-1 inline-block text-xs font-bold text-amber-800 underline">
                   Ver todos
                 </Link>
               </div>
@@ -1292,13 +1278,15 @@ export default function NoctalProfile() {
             <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-4 py-3">
                 <h2 className="text-sm font-black uppercase tracking-wide text-slate-800">Seguindo</h2>
-                <Link to={`/u/${authUser.uid}/seguindo`} className="mt-1 inline-block text-xs font-bold text-amber-800 underline">
+                <Link to={`/u/${profileOwnerUid}/seguindo`} className="mt-1 inline-block text-xs font-bold text-amber-800 underline">
                   Ver todos
                 </Link>
               </div>
               <ul className="divide-y divide-slate-100">
                 {followingRows.length === 0 ? (
-                  <li className="px-4 py-8 text-center text-sm text-slate-500">Ainda não segues ninguém.</li>
+                  <li className="px-4 py-8 text-center text-sm text-slate-500">
+                    {isOwnProfile ? 'Ainda não segues ninguém.' : 'Ainda não segue ninguém.'}
+                  </li>
                 ) : (
                   followingRows.map((r) => <UserListRow key={r.id} uid={r.followingId} hint="Perfil" />)
                 )}
@@ -1308,22 +1296,24 @@ export default function NoctalProfile() {
           </div>
         )}
 
-        {profileTab === 'movies' && authUser && (
+        {profileTab === 'movies' && profileOwnerUid && (
           <div className="mx-auto w-full max-w-3xl space-y-6">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-lg font-black text-slate-900">Favoritos TMDB</h2>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFavSearch('');
-                    setFavResults([]);
-                    setFavoritesModalOpen(true);
-                  }}
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-black uppercase tracking-wide text-white hover:bg-slate-800"
-                >
-                  Gerir favoritos
-                </button>
+                {isOwnProfile && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFavSearch('');
+                      setFavResults([]);
+                      setFavoritesModalOpen(true);
+                    }}
+                    className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-black uppercase tracking-wide text-white hover:bg-slate-800"
+                  >
+                    Gerir favoritos
+                  </button>
+                )}
               </div>
               <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
                 {favoriteList.map((m) => (
@@ -1339,9 +1329,12 @@ export default function NoctalProfile() {
                 ))}
               </div>
             </div>
+            <WatchlistHomePanel uid={profileOwnerUid} isOwner={isOwnProfile} />
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-black text-slate-900">As tuas avaliações</h2>
-              <p className="mt-1 text-sm text-slate-600">Últimas classificações na comunidade.</p>
+              <h2 className="text-lg font-black text-slate-900">{isOwnProfile ? 'As tuas avaliações' : 'Avaliações'}</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                {isOwnProfile ? 'Últimas classificações na comunidade.' : 'Classificações públicas na comunidade.'}
+              </p>
               <ul className="mt-4 divide-y divide-slate-100">
                 {myReviews.length === 0 ? (
                   <li className="py-8 text-center text-sm text-slate-500">Sem avaliações ainda.</li>
@@ -1352,7 +1345,7 @@ export default function NoctalProfile() {
                       <li key={r.id} className="flex gap-2 py-3">
                         <div className="flex h-16 w-11 shrink-0 overflow-hidden rounded-md bg-slate-200">
                           {r.moviePosterPath ? (
-                            <img src={posterUrl(r.moviePosterPath, 'w92')} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                            <img src={posterUrl(r.moviePosterPath, 'w185')} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
                             <div className="flex h-full items-center justify-center text-[10px] font-bold text-slate-500">TMDB</div>
                           )}
@@ -1366,26 +1359,27 @@ export default function NoctalProfile() {
                           </p>
                           {r.text?.trim() && <p className="mt-1 line-clamp-2 text-sm text-slate-600">{r.text.trim()}</p>}
                         </div>
-                        <button
-                          type="button"
-                          disabled={deletingReviewTmdbId === r.tmdbId}
-                          className="flex h-9 w-9 shrink-0 items-center justify-center self-start rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50"
-                          aria-label={`Apagar avaliação: ${label}`}
-                          onClick={() => void handleDeleteMyReview(r.tmdbId, label)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {isOwnProfile && (
+                          <button
+                            type="button"
+                            disabled={deletingReviewTmdbId === r.tmdbId}
+                            className="flex h-9 w-9 shrink-0 items-center justify-center self-start rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50"
+                            aria-label={`Apagar avaliação: ${label}`}
+                            onClick={() => void handleDeleteMyReview(r.tmdbId, label)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
                       </li>
                     );
                   })
                 )}
               </ul>
-              <Link
-                to="/avaliacoes"
-                className="mt-4 inline-block text-sm font-bold text-amber-800 underline"
-              >
-                Ver todas as avaliações
-              </Link>
+              {isOwnProfile && (
+                <Link to="/avaliacoes" className="mt-4 inline-block text-sm font-bold text-amber-800 underline">
+                  Ver todas as avaliações
+                </Link>
+              )}
             </div>
           </div>
         )}
@@ -1687,7 +1681,7 @@ export default function NoctalProfile() {
                       <li key={m.id} className="flex items-center gap-3 p-3">
                         <div className="h-14 w-10 shrink-0 overflow-hidden rounded bg-slate-200">
                           {m.poster_path ? (
-                            <img src={posterUrl(m.poster_path, 'w92')} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                            <img src={posterUrl(m.poster_path, 'w185')} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
                             <div className="flex h-full items-center justify-center text-[8px] font-bold text-slate-500">—</div>
                           )}
@@ -1736,16 +1730,44 @@ export default function NoctalProfile() {
         </div>
       )}
 
+      <ConfirmModal
+        isOpen={!!confirmAction}
+        title={confirmAction?.title ?? ''}
+        message={confirmAction?.message ?? ''}
+        onConfirm={() => confirmAction?.onConfirm()}
+        onCancel={() => setConfirmAction(null)}
+        isDestructive={true}
+        confirmLabel="Confirmar"
+      />
+      <ConfirmModal
+        isOpen={!!confirmDeletePostId}
+        title="Apagar Post"
+        message="Tem certeza que quer apagar este post para sempre? Esta ação não pode ser desfeita."
+        confirmLabel="Apagar"
+        onConfirm={() => confirmDeletePostId && handleDeletePost(confirmDeletePostId)}
+        onCancel={() => setConfirmDeletePostId(null)}
+        isDestructive={true}
+      />
       {authUser && (
-        <CommentsModal
-          open={!!commentsPostId}
-          postId={commentsPostId}
-          postSnippet={myPosts.find((p) => p.id === commentsPostId)?.content ?? ''}
-          onClose={() => setCommentsPostId(null)}
-          uid={authUser.uid}
-          displayName={displayName}
-          myInitials={myInitials}
-        />
+        <>
+          <CommentsModal
+            open={!!commentsPostId}
+            postId={commentsPostId}
+            postSnippet={displayPosts.find((p) => p.id === commentsPostId)?.content ?? ''}
+            onClose={() => setCommentsPostId(null)}
+            uid={authUser.uid}
+            displayName={viewerCommentName}
+            myInitials={viewerCommentInitials}
+          />
+          <ShareModal
+            open={!!sharePost}
+            onClose={() => setSharePost(null)}
+            postId={sharePost?.id ?? ''}
+            postContent={sharePost?.content ?? ''}
+            currentUserId={authUser.uid}
+            currentUserDisplayName={viewerCommentName}
+          />
+        </>
       )}
       <MobileBottomNav />
     </div>

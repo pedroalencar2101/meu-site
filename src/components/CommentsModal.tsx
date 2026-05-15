@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { MessageCircle, Send, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react';
+import { MessageCircle, Send, X, Reply } from 'lucide-react';
 import type { FirestoreComment, ReactionType } from '../types/feed';
+import ConfirmModal from './ConfirmModal';
 import {
   subscribeComments,
   addComment,
@@ -19,6 +20,7 @@ type Props = {
   uid: string;
   displayName: string;
   myInitials: string;
+  myAvatar?: string | null;
 };
 
 export default function CommentsModal({
@@ -29,18 +31,26 @@ export default function CommentsModal({
   uid,
   displayName,
   myInitials,
+  myAvatar,
 }: Props) {
   const [list, setList] = useState<FirestoreComment[]>([]);
   const [text, setText] = useState('');
   const [myByComment, setMyByComment] = useState<Map<string, ReactionType>>(new Map());
   const [submitting, setSubmitting] = useState(false);
+  const [replyTo, setReplyTo] = useState<{ id: string; name: string } | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
+
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) {
-      setList([]);
-      setText('');
-      setMyByComment(new Map());
-      return;
+      const t1 = setTimeout(() => setList([]), 0);
+      const t2 = setTimeout(() => setText(''), 0);
+      const t3 = setTimeout(() => setMyByComment(new Map()), 0);
+      const t4 = setTimeout(() => setReplyTo(null), 0);
+      const t5 = setTimeout(() => setExpandedReplies(new Set()), 0);
+      return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); clearTimeout(t5); };
     }
     document.body.style.overflow = 'hidden';
     return () => {
@@ -56,8 +66,8 @@ export default function CommentsModal({
   useEffect(() => {
     if (!open || !postId) return;
     if (list.length === 0) {
-      setMyByComment(new Map());
-      return;
+      const t = setTimeout(() => setMyByComment(new Map()), 0);
+      return () => clearTimeout(t);
     }
     let cancelled = false;
     fetchMyCommentReactions(
@@ -75,7 +85,7 @@ export default function CommentsModal({
   if (!open || !postId) return null;
 
   async function syncMyReactions() {
-    if (list.length === 0) {
+    if (list.length === 0 || !postId) {
       setMyByComment(new Map());
       return;
     }
@@ -93,8 +103,9 @@ export default function CommentsModal({
     if (!text.trim() || submitting) return;
     setSubmitting(true);
     try {
-      await addComment({ postId, uid, displayName, text });
+      await addComment({ postId: postId!, uid, displayName, photoURL: myAvatar || null, text, parentId: replyTo?.id });
       setText('');
+      setReplyTo(null);
     } catch (err) {
       console.error(err);
     } finally {
@@ -102,9 +113,133 @@ export default function CommentsModal({
     }
   }
 
+  function handleReply(commentId: string, authorName: string) {
+    setReplyTo({ id: commentId, name: authorName });
+    setExpandedReplies((prev) => {
+      const next = new Set(prev);
+      next.add(commentId);
+      return next;
+    });
+    if (inputRef.current) inputRef.current.focus();
+  }
+
+  function toggleReplies(commentId: string) {
+    setExpandedReplies((prev) => {
+      const next = new Set(prev);
+      if (next.has(commentId)) next.delete(commentId);
+      else next.add(commentId);
+      return next;
+    });
+  }
+
+  // Organize comments into a tree
+  const topLevelComments = list.filter((c) => !c.parentId);
+  const repliesByParent = new Map<string, FirestoreComment[]>();
+  list.forEach((c) => {
+    if (c.parentId) {
+      const arr = repliesByParent.get(c.parentId) || [];
+      arr.push(c);
+      repliesByParent.set(c.parentId, arr);
+    }
+  });
+
+  const renderComment = (c: FirestoreComment, isReply: boolean = false) => {
+    const mine = c.authorId === uid;
+    const myReact = myByComment.get(c.id);
+    const hasReactions = c.likeCount > 0 || c.loveCount > 0 || c.smileCount > 0 || c.angryCount > 0;
+    const totalReactions = c.likeCount + c.loveCount + c.smileCount + c.angryCount;
+
+    return (
+      <div key={c.id} className={`flex gap-3 ${isReply ? 'mt-3 pl-8 sm:pl-11' : 'mt-4'}`}>
+        <a href={`/u/${c.authorId}`} className={`flex flex-shrink-0 items-center justify-center rounded-full bg-slate-100 ring-1 ring-slate-200 ${isReply ? 'h-7 w-7 text-[10px]' : 'h-10 w-10 text-xs'} font-bold text-slate-600 transition hover:opacity-80 cursor-pointer`}>
+          {c.authorAvatar ? (
+            <img src={c.authorAvatar} alt="" className="h-full w-full object-cover rounded-full" referrerPolicy="no-referrer" />
+          ) : (
+            c.authorInitials
+          )}
+        </a>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="relative inline-block self-start rounded-2xl bg-[#f0f2f5] px-4 py-2.5">
+            <a href={`/u/${c.authorId}`} className="text-[13px] font-bold text-slate-900 hover:underline cursor-pointer">{c.authorName}</a>
+            <p className="whitespace-pre-wrap text-[14px] text-slate-800 leading-snug">{c.text}</p>
+            {hasReactions && (
+              <div className="absolute -bottom-3 right-1 flex items-center rounded-full border border-slate-200 bg-white px-1 py-0.5 shadow-sm">
+                <div className="flex -space-x-1">
+                  {c.likeCount > 0 && <div className="z-40 flex h-4 w-4 items-center justify-center rounded-full ring-1 ring-white bg-slate-100 text-[10px] leading-none shadow-sm">👍</div>}
+                  {c.loveCount > 0 && <div className="z-30 flex h-4 w-4 items-center justify-center rounded-full ring-1 ring-white bg-slate-100 text-[10px] leading-none shadow-sm">❤️</div>}
+                  {c.smileCount > 0 && <div className="z-20 flex h-4 w-4 items-center justify-center rounded-full ring-1 ring-white bg-slate-100 text-[10px] leading-none shadow-sm">😂</div>}
+                  {c.angryCount > 0 && <div className="z-10 flex h-4 w-4 items-center justify-center rounded-full ring-1 ring-white bg-slate-100 text-[10px] leading-none shadow-sm">😡</div>}
+                </div>
+                {totalReactions > 1 && <span className="ml-1 pr-0.5 text-[11px] font-bold text-slate-600">{totalReactions}</span>}
+              </div>
+            )}
+          </div>
+          
+          <div className="mt-1 flex items-center gap-3 px-3 text-[12px] font-bold text-slate-500">
+            <span className="font-medium text-slate-400">{formatPostTime(c.createdAt)}</span>
+            
+            <div className="group relative flex items-center">
+              <button
+                className={`transition hover:underline ${
+                  myReact === 'like' ? 'text-blue-600' :
+                  myReact === 'love' ? 'text-red-600' :
+                  myReact === 'smile' ? 'text-amber-600' : 
+                  myReact === 'angry' ? 'text-orange-600' : 'hover:text-slate-700'
+                }`}
+                onClick={() => void toggleCommentReaction(postId!, c.id, uid, myReact ? myReact : 'like').then(syncMyReactions)}
+              >
+                {myReact === 'like' ? 'Curtido' : myReact === 'love' ? 'Amei' : myReact === 'smile' ? 'Sorriu' : myReact === 'angry' ? 'Irritado' : 'Curtir'}
+              </button>
+              <div className="absolute bottom-full left-0 z-20 pb-2 hidden group-hover:block">
+                <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-lg animate-in fade-in slide-in-from-bottom-2">
+                  <button onClick={(e) => { e.stopPropagation(); void toggleCommentReaction(postId!, c.id, uid, 'like').then(syncMyReactions); }} className="flex h-7 w-7 items-center justify-center rounded-full text-[16px] transition hover:scale-125 hover:bg-slate-50" title="Curtir">👍</button>
+                  <button onClick={(e) => { e.stopPropagation(); void toggleCommentReaction(postId!, c.id, uid, 'love').then(syncMyReactions); }} className="flex h-7 w-7 items-center justify-center rounded-full text-[16px] transition hover:scale-125 hover:bg-slate-50" title="Amei">❤️</button>
+                  <button onClick={(e) => { e.stopPropagation(); void toggleCommentReaction(postId!, c.id, uid, 'smile').then(syncMyReactions); }} className="flex h-7 w-7 items-center justify-center rounded-full text-[16px] transition hover:scale-125 hover:bg-slate-50" title="Haha">😂</button>
+                  <button onClick={(e) => { e.stopPropagation(); void toggleCommentReaction(postId!, c.id, uid, 'angry').then(syncMyReactions); }} className="flex h-7 w-7 items-center justify-center rounded-full text-[16px] transition hover:scale-125 hover:bg-slate-50" title="Irritado">😡</button>
+                </div>
+              </div>
+            </div>
+
+            {!isReply && (
+              <button onClick={() => handleReply(c.id, c.authorName)} className="transition hover:text-slate-700 hover:underline">
+                Responder
+              </button>
+            )}
+
+            {mine && (
+              <button
+                onClick={() => setConfirmDeleteId(c.id)}
+                className="text-red-500 hover:underline transition"
+              >
+                Apagar
+              </button>
+            )}
+          </div>
+
+          {!isReply && repliesByParent.has(c.id) && (
+            <div className="mt-2">
+              {expandedReplies.has(c.id) ? (
+                <div className="flex flex-col gap-2">
+                  <button onClick={() => toggleReplies(c.id)} className="self-start text-[13px] font-bold text-slate-500 hover:text-slate-700 hover:underline">
+                    — Ocultar respostas
+                  </button>
+                  {repliesByParent.get(c.id)!.map((reply) => renderComment(reply, true))}
+                </div>
+              ) : (
+                <button onClick={() => toggleReplies(c.id)} className="text-[13px] font-bold text-slate-500 hover:text-slate-700 hover:underline">
+                  — Ver {repliesByParent.get(c.id)!.length} {repliesByParent.get(c.id)!.length === 1 ? 'resposta' : 'respostas'}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const node = (
     <div
-      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 p-0 pt-[env(safe-area-inset-top)] sm:items-center sm:p-4"
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 p-0 pt-[env(safe-area-inset-top)] sm:items-center sm:p-4 backdrop-blur-sm transition-opacity"
       role="dialog"
       aria-modal="true"
       aria-labelledby="comments-modal-title"
@@ -112,121 +247,91 @@ export default function CommentsModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="flex max-h-[min(100dvh,720px)] h-[min(92dvh,720px)] w-full max-w-lg flex-col rounded-t-2xl bg-white shadow-2xl sm:h-[min(88dvh,640px)] sm:rounded-2xl">
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <div className="min-w-0 flex-1 pr-2">
-            <h2 id="comments-modal-title" className="truncate text-sm font-black uppercase tracking-wide text-slate-800">
+      <div className="flex max-h-[min(100dvh,800px)] h-[min(95dvh,800px)] w-full max-w-2xl flex-col rounded-t-2xl bg-white shadow-2xl sm:h-[min(90dvh,700px)] sm:rounded-2xl animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div className="min-w-0 flex-1 pr-4">
+            <h2 id="comments-modal-title" className="truncate text-base font-black text-slate-900">
               Comentários
             </h2>
-            <p className="truncate text-xs text-slate-500">{postSnippet}</p>
+            <p className="truncate text-[13px] font-medium text-slate-500 mt-0.5">{postSnippet}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-2 text-slate-600 hover:bg-slate-100"
+            className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
             aria-label="Fechar"
           >
-            <X className="h-5 w-5" />
+            <X className="h-6 w-6" />
           </button>
         </div>
 
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
+        <div className="flex flex-1 flex-col overflow-hidden bg-white">
+          <div className="flex-1 overflow-y-auto px-4 py-2 pb-6 sm:px-6">
             {list.length === 0 && (
-              <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-slate-500">
-                <MessageCircle className="h-10 w-10 opacity-40" />
-                <p className="text-sm font-medium">Ainda não há comentários.</p>
+              <div className="flex flex-col items-center justify-center gap-3 py-16 text-center text-slate-500">
+                <MessageCircle className="h-12 w-12 text-slate-300" />
+                <p className="text-[15px] font-bold text-slate-900">Nenhum comentário</p>
+                <p className="text-[14px]">Seja o primeiro a comentar neste post.</p>
               </div>
             )}
-            {list.map((c) => {
-              const mine = c.authorId === uid;
-              const liked = myByComment.get(c.id) === 'like';
-              const disliked = myByComment.get(c.id) === 'dislike';
-              return (
-                <div key={c.id} className="rounded-xl border border-slate-200 bg-[#f0f2f5]/60 p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex min-w-0 flex-1 gap-2">
-                      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-slate-600 to-slate-800 text-xs font-bold text-white">
-                        {c.authorInitials}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
-                          <span className="text-sm font-bold text-slate-900">{c.authorName}</span>
-                          <span className="text-xs font-medium text-slate-500">{formatPostTime(c.createdAt)}</span>
-                        </div>
-                        <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">{c.text}</p>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void toggleCommentReaction(postId, c.id, uid, 'like').then(syncMyReactions)}
-                            className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold ${
-                              liked ? 'bg-slate-200 text-slate-900' : 'bg-white text-slate-600 hover:bg-slate-100'
-                            }`}
-                          >
-                            <ThumbsUp className={`h-3.5 w-3.5 ${liked ? 'fill-current' : ''}`} />
-                            <span>{c.likeCount}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void toggleCommentReaction(postId, c.id, uid, 'dislike').then(syncMyReactions)}
-                            className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold ${
-                              disliked ? 'bg-red-50 text-red-700' : 'bg-white text-slate-600 hover:bg-slate-100'
-                            }`}
-                          >
-                            <ThumbsDown className={`h-3.5 w-3.5 ${disliked ? 'fill-current' : ''}`} />
-                            <span>{c.dislikeCount}</span>
-                          </button>
-                          {mine && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void deleteComment({ postId, commentId: c.id, uid }).catch((err) => console.error(err))
-                              }
-                              className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold text-red-700 hover:bg-red-50"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              Apagar
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {topLevelComments.map((c) => renderComment(c, false))}
           </div>
 
-          <form
-            id={`noctal-comment-form-${postId}`}
-            onSubmit={onSubmit}
-            onClick={(e) => e.stopPropagation()}
-            className="border-t border-slate-200 bg-white p-3"
-          >
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-slate-700 to-slate-900 text-xs font-bold text-white">
-                {myInitials}
+          <div className="border-t border-slate-200 bg-white p-3 sm:px-4 sm:py-3 shadow-[0_-4px_10px_rgba(0,0,0,0.02)]">
+            {replyTo && (
+              <div className="mb-2 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 border border-slate-100">
+                <span className="flex items-center gap-2">
+                  <Reply className="h-4 w-4" /> A responder a <span className="font-bold text-slate-900">{replyTo.name}</span>
+                </span>
+                <button onClick={() => setReplyTo(null)} className="p-1 hover:bg-slate-200 rounded-full transition">
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <input
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="Escreva um comentário..."
-                autoComplete="off"
-                name={`comment-body-${postId}`}
-                className="min-w-0 flex-1 rounded-full border border-slate-200 bg-[#f0f2f5] px-4 py-2 text-sm text-slate-800 outline-none focus:border-slate-400"
-              />
-              <button
-                type="submit"
-                disabled={!text.trim() || submitting}
-                className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-slate-800 text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-                aria-label="Enviar comentário"
-              >
-                <Send className="h-4 w-4" />
-              </button>
-            </div>
-          </form>
+            )}
+            <form
+              id={`noctal-comment-form-${postId}`}
+              onSubmit={onSubmit}
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-end gap-3"
+            >
+              <div className="flex h-10 w-10 shrink-0 overflow-hidden items-center justify-center rounded-full bg-slate-100 border border-slate-200 text-xs font-bold text-slate-600">
+                {myAvatar ? <img src={myAvatar} alt="" className="h-full w-full object-cover" /> : myInitials}
+              </div>
+              <div className="relative flex min-w-0 flex-1 items-end">
+                <input
+                  ref={inputRef}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="Escreva um comentário..."
+                  autoComplete="off"
+                  name={`comment-body-${postId}`}
+                  className="w-full rounded-2xl border border-slate-200 bg-[#f0f2f5] py-2.5 pl-4 pr-12 text-[15px] text-slate-800 outline-none transition focus:border-slate-300 focus:bg-white focus:ring-2 focus:ring-slate-200/50"
+                />
+                <button
+                  type="submit"
+                  disabled={!text.trim() || submitting}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-white transition hover:bg-blue-700 disabled:opacity-40"
+                  aria-label="Enviar comentário"
+                >
+                  <Send className="h-4 w-4 ml-0.5" />
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
+      <ConfirmModal
+        isOpen={!!confirmDeleteId}
+        title="Apagar Comentário"
+        message="Tem certeza que quer apagar este comentário? Esta ação não pode ser desfeita."
+        confirmLabel="Apagar"
+        onConfirm={() => {
+          if (!postId || !confirmDeleteId) return;
+          void deleteComment({ postId, commentId: confirmDeleteId, uid }).catch(console.error);
+        }}
+        onCancel={() => setConfirmDeleteId(null)}
+        isDestructive={true}
+      />
     </div>
   );
 

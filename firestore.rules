@@ -78,7 +78,7 @@ service cloud.firestore {
         allow create, update: if isUser(uid)
           && request.resource.data.keys().hasAll(['type', 'updatedAt'])
           && request.resource.data.type in ['like', 'love', 'smile', 'angry'];
-        allow delete: if isUser(uid);
+        allow delete: if isUser(uid) || postAuthor(postId) == request.auth.uid;
       }
 
       match /comments/{commentId} {
@@ -112,7 +112,7 @@ service cloud.firestore {
           allow create, update: if isUser(uid)
             && request.resource.data.keys().hasAll(['type', 'updatedAt'])
             && request.resource.data.type in ['like', 'love', 'smile', 'angry'];
-          allow delete: if isUser(uid);
+          allow delete: if isUser(uid) || postAuthor(postId) == request.auth.uid;
         }
       }
     }
@@ -203,7 +203,6 @@ service cloud.firestore {
     }
 
     match /directMessages/{msgId} {
-      // Simplificado para destravar a leitura (O filtro real será feito no frontend)
       allow read: if signedIn();
 
       allow create: if signedIn()

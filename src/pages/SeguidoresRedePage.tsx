@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Users } from 'lucide-react';
+import { UserPlus } from 'lucide-react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { subscribeFollowersOf, subscribeFollowingOf, type FollowDoc } from '../services/follows';
-import UserListRow from '../components/UserListRow';
 import AppPageShell from '../components/AppPageShell';
+import NetworkTabs from '../components/NetworkTabs';
+import UserListCard from '../components/UserListCard';
+import UserListPanel from '../components/UserListPanel';
 
 export default function SeguidoresRedePage() {
   const [user, setUser] = useState<User | null>(auth.currentUser);
@@ -27,8 +29,8 @@ export default function SeguidoresRedePage() {
     return subscribeFollowingOf(uid, setRows);
   }, [user?.uid, tab]);
 
-  const title = tab === 'followers' ? 'Seguidores' : 'Seguindo';
-  const subtitle = tab === 'followers' ? 'Quem acompanha o teu perfil' : 'Perfis que segues';
+  const isFollowers = tab === 'followers';
+  const uids = rows.map((r) => (isFollowers ? r.followerId : r.followingId));
 
   return (
     <AppPageShell title="Rede" description="Gerir seguidores e contas que segues.">
@@ -36,57 +38,47 @@ export default function SeguidoresRedePage() {
         <p className="text-center text-sm font-medium text-slate-500">Inicia sessão para veres a tua rede.</p>
       ) : (
         <>
-          <div className="mb-5 flex flex-wrap items-center gap-2">
-            <Link
-              to="/seguidores"
-              className={`rounded-full px-4 py-2 text-xs font-black uppercase tracking-wide transition ${
-                tab === 'followers' ? 'bg-slate-900 text-white shadow-md' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              Seguidores
-            </Link>
-            <Link
-              to="/seguidores?tab=seguindo"
-              className={`rounded-full px-4 py-2 text-xs font-black uppercase tracking-wide transition ${
-                tab === 'following' ? 'bg-slate-900 text-white shadow-md' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              Seguindo
-            </Link>
+          <div className="mb-6 flex flex-wrap items-center gap-3">
+            <NetworkTabs
+              active={tab}
+              followersHref="/seguidores"
+              followingHref="/seguidores?tab=seguindo"
+            />
             <Link
               to="/explorar"
-              className="ml-auto text-xs font-bold text-amber-800 underline decoration-amber-300 underline-offset-2 hover:text-amber-950"
+              className="noctal-btn-primary ml-auto !py-2 !text-xs"
             >
+              <UserPlus className="h-4 w-4" />
               Procurar pessoas
             </Link>
           </div>
 
-          <div className="mb-4 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <Users className="h-8 w-8 shrink-0 text-slate-500" />
-            <div>
-              <h2 className="text-sm font-black uppercase tracking-wide text-slate-900">{title}</h2>
-              <p className="text-xs font-medium text-slate-500">{subtitle}</p>
-            </div>
-          </div>
-
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            {rows.length === 0 ? (
-              <div className="px-6 py-14 text-center">
-                <p className="text-sm font-semibold text-slate-600">Ainda não há ninguém nesta lista.</p>
-                <p className="mt-2 text-xs font-medium text-slate-400">
-                  {tab === 'followers'
-                    ? 'Convida amigos a seguirem-te a partir do teu perfil público.'
-                    : 'Explora perfis no separador “Procurar pessoas” e segue quem te interessa.'}
-                </p>
-              </div>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {tab === 'followers'
-                  ? rows.map((r) => <UserListRow key={r.id} uid={r.followerId} hint="Perfil" />)
-                  : rows.map((r) => <UserListRow key={r.id} uid={r.followingId} hint="Perfil" />)}
-              </ul>
-            )}
-          </div>
+          <UserListPanel
+            title={isFollowers ? 'Seguidores' : 'Seguindo'}
+            description={
+              isFollowers ? 'Quem acompanha o teu perfil' : 'Perfis que segues na comunidade'
+            }
+            count={uids.length}
+            isEmpty={uids.length === 0}
+            variant="grid"
+            emptyTitle={isFollowers ? 'Ainda sem seguidores' : 'Ainda não segues ninguém'}
+            emptyDescription={
+              isFollowers
+                ? 'Partilha o teu perfil e publica avaliações para atrair a comunidade Noctal.'
+                : 'Explora perfis e segue quem partilha os teus gostos cinematográficos.'
+            }
+          >
+            {uids.map((uid) => (
+              <UserListCard
+                key={uid}
+                uid={uid}
+                layout="card"
+                viewerId={user.uid}
+                showFollow
+                showChevron={false}
+              />
+            ))}
+          </UserListPanel>
         </>
       )}
     </AppPageShell>

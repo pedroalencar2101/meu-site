@@ -1,12 +1,8 @@
 import {
-  Search,
-  Home,
   Users,
   LayoutDashboard,
   Star,
   Image as ImageIcon,
-  MessageCircle,
-  Bell,
   Settings,
   Send,
   Film,
@@ -15,11 +11,11 @@ import {
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { User } from 'firebase/auth';
-import type { UiPost } from '../types/feed';
 import { useLiveUserCard } from '../hooks/useLiveUserCard';
 import { useNoctalFeed } from '../hooks/useNoctalFeed';
 import CommentsModal from '../components/CommentsModal';
 import MobileBottomNav from '../components/MobileBottomNav';
+import AppTopBar from '../components/AppTopBar';
 import ConfirmModal from '../components/ConfirmModal';
 import { deletePost } from '../services/feedPosts';
 import { subscribeMyNotifications } from '../services/notifications';
@@ -47,7 +43,6 @@ export default function NoctalFeed() {
 
   const [nowPlaying, setNowPlaying] = useState<TmdbMovie[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
   const [newPostText, setNewPostText] = useState('');
   const [isSubmittingPost, setIsSubmittingPost] = useState(false);
   const [commentsPostId, setCommentsPostId] = useState<string | null>(null);
@@ -97,14 +92,6 @@ export default function NoctalFeed() {
     );
   }, [user?.uid]);
 
-  const q = searchQuery.trim().toLowerCase();
-  const filteredPosts: UiPost[] = posts.filter(
-    (post) =>
-      !q ||
-      post.content.toLowerCase().includes(q) ||
-      post.authorName.toLowerCase().includes(q)
-  );
-
   const onCreatePost = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -142,105 +129,20 @@ export default function NoctalFeed() {
 
   return (
     <div className="relative min-h-dvh w-full max-w-[100vw] bg-[#f0f2f5] font-sans text-slate-900 selection:bg-slate-300 [overflow-x:clip] pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-8">
-      <nav className="fixed left-0 right-0 top-0 z-50 border-b border-slate-200/90 bg-white/95 shadow-sm backdrop-blur-md supports-[backdrop-filter]:bg-white/90">
-        <div className="mx-auto flex w-full max-w-[100vw] min-w-0 items-center gap-2 px-2 py-2 sm:gap-3 sm:px-4 sm:py-2.5 lg:max-w-[1200px]">
-          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-            <Link to="/" className="shrink-0">
-              <img src="/logo.png" alt="Noctal" className="h-8 w-auto max-h-9 object-contain sm:h-9" />
-            </Link>
-            <h1 className="hidden shrink-0 font-black uppercase tracking-widest text-slate-800 min-[400px]:block sm:text-xl">
-              Noctal
-            </h1>
-            <div className="group relative min-w-0 flex-1 max-w-[min(100%,18rem)] sm:max-w-xs md:max-w-sm lg:max-w-md">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-slate-700 sm:left-3" />
-              <input
-                type="search"
-                name="home-search"
-                autoComplete="off"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Pesquisar posts…"
-                className="w-full min-w-0 rounded-full border border-transparent bg-[#f0f2f5] py-2 pl-8 pr-3 text-sm font-medium text-slate-700 outline-none transition-all placeholder:text-slate-500 focus:border-slate-200 focus:ring-2 focus:ring-slate-300/80 sm:pl-9 sm:pr-4"
-              />
-            </div>
-          </div>
-
-          <div className="hidden shrink-0 items-center gap-0.5 rounded-2xl bg-slate-100/80 p-1 ring-1 ring-slate-200/60 lg:flex">
-            <Link
-              to="/"
-              className="flex min-h-[2.75rem] min-w-[2.75rem] items-center justify-center rounded-xl border-b-[3px] border-slate-800 text-slate-800 transition-colors hover:bg-white/90"
-              aria-current="page"
-              title="Início"
-            >
-              <Home className="h-6 w-6" />
-            </Link>
-            <Link
-              to="/profile"
-              className="flex min-h-[2.75rem] min-w-[2.75rem] items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-white/90 hover:text-slate-800"
-              title="Perfil"
-            >
-              <Users className="h-6 w-6" />
-            </Link>
-            <Link
-              to="/em-cartaz"
-              className="flex min-h-[2.75rem] min-w-[2.75rem] items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-white/90 hover:text-slate-800"
-              title="Filmes"
-            >
-              <Film className="h-6 w-6" />
-            </Link>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-            <Link
-              to="/explorar"
-              className="hidden rounded-full bg-[#f0f2f5] p-2 text-slate-700 transition-all hover:bg-slate-200 min-[420px]:inline-flex"
-              aria-label="Procurar pessoas"
-              title="Pessoas"
-            >
-              <UserRoundSearch className="h-5 w-5" />
-            </Link>
-            <Link
-              to="/mensagens"
-              className="rounded-full bg-[#f0f2f5] p-2 text-slate-700 transition-all hover:bg-slate-200 sm:p-2.5"
-              aria-label="Mensagens"
-            >
-              <MessageCircle className="h-5 w-5" />
-            </Link>
-            <Link
-              to="/notificacoes"
-              className="relative rounded-full bg-[#f0f2f5] p-2 text-slate-700 transition-all hover:bg-slate-200 sm:p-2.5"
-              aria-label="Notificações"
-            >
-              <Bell className="h-5 w-5" />
-              {notifUnread > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex min-h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-black leading-none text-white ring-2 ring-white">
-                  {notifUnread > 99 ? '99+' : notifUnread}
-                </span>
-              )}
-            </Link>
-            <Link to="/profile" className="ml-0.5 flex shrink-0 rounded-full transition-all hover:bg-slate-100 sm:ml-1">
-              {navAvatarSrc ? (
-                <img
-                  src={navAvatarSrc}
-                  alt={composerDisplayName}
-                  referrerPolicy="no-referrer"
-                  className="h-9 w-9 rounded-full border border-slate-300 object-cover shadow-sm sm:h-10 sm:w-10"
-                />
-              ) : (
-                <div className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-300 bg-gradient-to-tr from-slate-700 to-slate-900 text-xs font-bold text-white shadow-sm sm:h-10 sm:w-10 sm:text-sm">
-                  {navAvatarInitials}
-                </div>
-              )}
-            </Link>
-          </div>
-        </div>
-      </nav>
+      <AppTopBar
+        activeNav="home"
+        user={user}
+        notifUnread={notifUnread}
+        navAvatarSrc={navAvatarSrc}
+        navAvatarInitials={navAvatarInitials}
+        navAvatarAlt={composerDisplayName}
+      />
 
       <main className="mx-auto flex w-full min-w-0 max-w-[1200px] flex-col gap-6 px-3 pb-8 pt-[4.25rem] sm:px-4 sm:pt-20 lg:flex-row lg:justify-between lg:gap-6 lg:px-4 lg:pt-[5.25rem]">
         <aside className="sticky top-[4.5rem] hidden h-fit w-full min-w-0 max-w-[280px] flex-col gap-1 lg:flex lg:top-[5.5rem] xl:max-w-[300px]">
           <Link
             to="/profile"
-            className="mb-2 flex cursor-pointer items-center gap-3 rounded-xl border border-transparent p-3 transition-all hover:border-slate-200 hover:bg-white hover:shadow-sm"
+            className="noctal-interactive mb-2 flex cursor-pointer items-center gap-3 rounded-xl border border-transparent p-3 transition-all duration-200 hover:border-slate-200 hover:bg-white hover:shadow-sm"
           >
             {navAvatarSrc ? (
               <img
@@ -259,15 +161,15 @@ export default function NoctalFeed() {
 
           <Link
             to="/painel"
-            className="flex w-full cursor-pointer items-center gap-3 rounded-xl p-3 text-left text-slate-700 transition-colors hover:bg-slate-200/50"
+            className="flex w-full cursor-pointer items-center gap-3 rounded-xl p-3 text-left text-slate-700 transition-all duration-200 hover:bg-white hover:shadow-sm"
           >
-            <LayoutDashboard className="h-6 w-6 text-slate-500" />
+            <LayoutDashboard className="h-6 w-6 text-slate-500 transition-colors group-hover:text-slate-700" />
             <span className="text-[15px] font-semibold">Painel Mensal</span>
           </Link>
 
           <Link
             to="/avaliacoes"
-            className="flex w-full cursor-pointer items-center gap-3 rounded-xl p-3 text-left text-slate-700 transition-colors hover:bg-slate-200/50"
+            className="flex w-full cursor-pointer items-center gap-3 rounded-xl p-3 text-left text-slate-700 transition-all duration-200 hover:bg-white hover:shadow-sm"
           >
             <Star className="h-6 w-6 text-slate-500" />
             <span className="text-[15px] font-semibold">Minhas Avaliações</span>
@@ -275,7 +177,7 @@ export default function NoctalFeed() {
 
           <Link
             to="/lista-para-ver"
-            className="flex w-full cursor-pointer items-center gap-3 rounded-xl p-3 text-left text-slate-700 transition-colors hover:bg-slate-200/50"
+            className="flex w-full cursor-pointer items-center gap-3 rounded-xl p-3 text-left text-slate-700 transition-all duration-200 hover:bg-white hover:shadow-sm"
           >
             <Film className="h-6 w-6 text-slate-500" />
             <span className="text-[15px] font-semibold">Lista para ver</span>
@@ -283,7 +185,7 @@ export default function NoctalFeed() {
 
           <Link
             to="/explorar"
-            className="flex w-full cursor-pointer items-center gap-3 rounded-xl p-3 text-left text-slate-700 transition-colors hover:bg-slate-200/50"
+            className="flex w-full cursor-pointer items-center gap-3 rounded-xl p-3 text-left text-slate-700 transition-all duration-200 hover:bg-white hover:shadow-sm"
           >
             <UserRoundSearch className="h-6 w-6 text-slate-500" />
             <span className="text-[15px] font-semibold">Procurar pessoas</span>
@@ -291,17 +193,17 @@ export default function NoctalFeed() {
 
           <Link
             to="/seguidores"
-            className="flex w-full cursor-pointer items-center gap-3 rounded-xl p-3 text-left text-slate-700 transition-colors hover:bg-slate-200/50"
+            className="flex w-full cursor-pointer items-center gap-3 rounded-xl p-3 text-left text-slate-700 transition-all duration-200 hover:bg-white hover:shadow-sm"
           >
             <Users className="h-6 w-6 text-slate-500" />
             <span className="text-[15px] font-semibold">Seguidores</span>
           </Link>
 
-          <div className="mx-3 my-2 border-t border-slate-200"></div>
+          <div className="mx-3 my-2 border-t border-slate-200" />
 
           <Link
             to="/configuracoes"
-            className="flex w-full cursor-pointer items-center gap-3 rounded-xl p-3 text-left text-slate-700 transition-colors hover:bg-slate-200/50"
+            className="flex w-full cursor-pointer items-center gap-3 rounded-xl p-3 text-left text-slate-700 transition-all duration-200 hover:bg-white hover:shadow-sm"
           >
             <Settings className="h-6 w-6 text-slate-500" />
             <span className="text-[15px] font-semibold">Configurações</span>
@@ -322,7 +224,10 @@ export default function NoctalFeed() {
               <p className="mt-2 text-sm text-slate-500">
                 Siga outras pessoas para ver as publicações e avaliações delas aqui.
               </p>
-              <Link to="/explorar" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800">
+              <Link
+                to="/explorar"
+                className="noctal-btn-primary mt-4 inline-flex"
+              >
                 <UserRoundSearch className="h-4 w-4" /> Procurar pessoas
               </Link>
             </div>
@@ -333,7 +238,7 @@ export default function NoctalFeed() {
               <div className="mb-3 flex items-center gap-2">
                 <Link
                   to="/profile"
-                  className="flex h-10 w-10 flex-shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-gradient-to-tr from-slate-700 to-slate-900 text-sm font-bold text-white hover:opacity-80"
+                  className="flex h-10 w-10 flex-shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-gradient-to-tr from-slate-700 to-slate-900 text-sm font-bold text-white transition-transform duration-200 hover:scale-105"
                 >
                   {navAvatarSrc ? (
                     <img src={navAvatarSrc} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
@@ -349,30 +254,30 @@ export default function NoctalFeed() {
                   onChange={(e) => setNewPostText(e.target.value)}
                   placeholder={`Qual obra-prima você assistiu hoje, ${firstName(user)}?`}
                   disabled={!user}
-                  className="w-full cursor-text rounded-full bg-[#f0f2f5] py-2.5 px-4 text-[15px] font-medium text-slate-700 outline-none transition-colors hover:bg-slate-200 disabled:opacity-50"
+                  className="w-full cursor-text rounded-full bg-[#f0f2f5] px-4 py-2.5 text-[15px] font-medium text-slate-700 outline-none transition-all duration-200 hover:bg-slate-200 focus:bg-white focus:ring-2 focus:ring-slate-300/50 disabled:opacity-50"
                 />
               </div>
               <div className="flex flex-wrap justify-stretch gap-2 border-t border-slate-100 px-1 pt-3 sm:flex-nowrap sm:justify-between">
                 <button
                   type="button"
                   onClick={() => navigate('/em-cartaz')}
-                  className="flex min-h-[2.75rem] min-w-[5.5rem] flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg py-2 text-[13px] font-bold text-slate-600 transition-colors hover:bg-[#f0f2f5] sm:text-[14px]"
+                  className="flex min-h-[2.75rem] min-w-[5.5rem] flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg py-2 text-[13px] font-bold text-slate-600 transition-all duration-200 hover:bg-[#f0f2f5] hover:shadow-sm active:scale-[0.98] sm:text-[14px]"
                 >
                   <ImageIcon className="h-5 w-5 shrink-0 text-green-600 sm:h-6 sm:w-6" /> <span>Cena</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => navigate('/avaliacoes')}
-                  className="flex min-h-[2.75rem] min-w-[5.5rem] flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg py-2 text-[13px] font-bold text-slate-600 transition-colors hover:bg-[#f0f2f5] sm:text-[14px]"
+                  className="flex min-h-[2.75rem] min-w-[5.5rem] flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg py-2 text-[13px] font-bold text-slate-600 transition-all duration-200 hover:bg-[#f0f2f5] hover:shadow-sm active:scale-[0.98] sm:text-[14px]"
                 >
                   <Star className="h-5 w-5 shrink-0 text-yellow-500 sm:h-6 sm:w-6" /> <span>Avaliar</span>
                 </button>
                 <button
                   type="submit"
                   disabled={!newPostText.trim() || !user || isSubmittingPost}
-                  className={`flex min-h-[2.75rem] min-w-[5.5rem] flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg py-2 text-[13px] font-bold transition-colors sm:text-[14px] ${
+                  className={`flex min-h-[2.75rem] min-w-[5.5rem] flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg py-2 text-[13px] font-bold transition-all duration-200 sm:text-[14px] ${
                     newPostText.trim() && user && !isSubmittingPost
-                      ? 'bg-slate-800 text-white hover:bg-slate-900'
+                      ? 'bg-slate-800 text-white shadow-sm hover:bg-slate-900 hover:shadow-md active:scale-[0.98]'
                       : 'cursor-not-allowed bg-gray-100 text-gray-400'
                   }`}
                 >
@@ -382,13 +287,7 @@ export default function NoctalFeed() {
             </form>
           </div>
 
-          {searchQuery.trim() && filteredPosts.length === 0 && (
-            <div className="py-10 text-center font-medium text-slate-500">
-              Nenhum post encontrado para &quot;{searchQuery}&quot;
-            </div>
-          )}
-
-          {filteredPosts.map((post) => (
+          {posts.map((post) => (
             <FeedPost
               key={post.id}
               post={post}
@@ -419,7 +318,7 @@ export default function NoctalFeed() {
                     type="button"
                     key={movie.id}
                     onClick={() => navigate(`/em-cartaz/filme/${movie.id}`)}
-                    className="cursor-pointer overflow-hidden rounded-md border border-slate-200 shadow-sm transition-opacity hover:opacity-80"
+                    className="cursor-pointer overflow-hidden rounded-md border border-slate-200 shadow-sm transition-all duration-200 hover:scale-[1.03] hover:shadow-md"
                   >
                     <img
                       src={`https://image.tmdb.org/t/p/w200${movie.poster_path ?? ''}`}
@@ -434,22 +333,21 @@ export default function NoctalFeed() {
             )}
             <Link
               to="/em-cartaz"
-              className="mt-4 flex w-full cursor-pointer items-center justify-center rounded-lg bg-[#f0f2f5] py-2 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-200"
+              className="mt-4 flex w-full cursor-pointer items-center justify-center rounded-lg bg-[#f0f2f5] py-2 text-sm font-bold text-slate-700 transition-all duration-200 hover:bg-slate-200 hover:shadow-sm"
             >
               Ver todos
             </Link>
           </div>
 
-          <div className="mx-2 border-t border-slate-200"></div>
+          <div className="mx-2 border-t border-slate-200" />
 
           <div className="px-2">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-[15px] font-bold text-slate-500">Conversas</h3>
-              <Search className="h-4 w-4 cursor-pointer text-slate-400 hover:text-slate-700" />
             </div>
             <Link
               to="/mensagens"
-              className="flex cursor-pointer items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white py-4 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-50"
+              className="flex cursor-pointer items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white py-4 text-sm font-bold text-slate-600 transition-all duration-200 hover:border-slate-400 hover:bg-slate-50 hover:shadow-sm"
             >
               Abrir mensagens
             </Link>

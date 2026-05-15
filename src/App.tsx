@@ -19,6 +19,7 @@ import SeguidoresRedePage from './pages/SeguidoresRedePage';
 import ConfiguracoesPage from './pages/ConfiguracoesPage';
 import NotificacoesPage from './pages/NotificacoesPage';
 import ListaParaVerPage from './pages/ListaParaVerPage';
+import NoctalBrand from './components/NoctalBrand';
 
 export default function App() {
   const [user, setUser] = useState<unknown>(null);
@@ -36,10 +37,7 @@ export default function App() {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center bg-[#f0f2f5] px-4">
         <div className="relative flex flex-col items-center justify-center animate-pulse">
-          <img src="/logo.png" alt="Noctal" className="h-16 w-auto mb-4 object-contain sm:h-20 drop-shadow-md" />
-          <h1 className="font-black uppercase tracking-[0.2em] text-slate-400 text-sm sm:text-base">
-            Noctal
-          </h1>
+          <NoctalBrand className="flex-col sm:flex-row [&_.noctal-brand-text]:!inline [&_.noctal-brand-text]:text-base" />
         </div>
       </div>
     );

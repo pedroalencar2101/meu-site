@@ -5,6 +5,7 @@ import { getDoc, doc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { subscribeFollowingIds } from '../services/follows';
 import { sendDirectMessage } from '../services/directMessages';
+import UserListCard from './UserListCard';
 
 type Props = {
   open: boolean;
@@ -150,37 +151,38 @@ export default function ShareModal({ open, onClose, postId, postContent, current
               <p className="text-sm font-bold text-slate-800">Ninguém encontrado</p>
             </div>
           ) : (
-            <ul className="space-y-1">
-              {filtered.map(u => {
+            <ul className="space-y-1 p-1">
+              {filtered.map((u) => {
                 const isSent = sentTo.includes(u.id);
                 const isSending = sendingTo === u.id;
-                
                 return (
-                  <li key={u.id} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-xl transition">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 overflow-hidden rounded-full bg-slate-100 shrink-0">
-                        {u.photo ? (
-                          <img src={u.photo} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs font-bold text-slate-500">
-                            {u.initials}
-                          </div>
-                        )}
-                      </div>
-                      <span className="text-sm font-bold text-slate-800">{u.name}</span>
-                    </div>
-                    
-                    <button
-                      disabled={isSent || isSending}
-                      onClick={() => handleShare(u.id)}
-                      className={`flex h-8 shrink-0 items-center justify-center rounded-lg px-3 text-xs font-bold transition ${
-                        isSent 
-                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
-                          : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-                      }`}
-                    >
-                      {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : isSent ? 'Enviado' : 'Enviar'}
-                    </button>
+                  <li key={u.id}>
+                    <UserListCard
+                      uid={u.id}
+                      name={u.name}
+                      photo={u.photo}
+                      showChevron={false}
+                      trailing={
+                        <button
+                          type="button"
+                          disabled={isSent || isSending}
+                          onClick={() => void handleShare(u.id)}
+                          className={`flex h-9 shrink-0 items-center justify-center rounded-xl px-4 text-xs font-bold transition-all duration-200 ${
+                            isSent
+                              ? 'cursor-not-allowed bg-slate-100 text-slate-400'
+                              : 'bg-slate-900 text-white hover:bg-slate-800 active:scale-95'
+                          }`}
+                        >
+                          {isSending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : isSent ? (
+                            'Enviado'
+                          ) : (
+                            'Enviar'
+                          )}
+                        </button>
+                      }
+                    />
                   </li>
                 );
               })}

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, Film, Loader2, Search, Sparkles } from 'lucide-react';
 import { getTmdbKey, posterUrl, tmdbGet, type TmdbMovieListItem, type TmdbSearchResponse } from '../services/tmdbClient';
 import MobileBottomNav from '../components/MobileBottomNav';
+import NoctalBrand from '../components/NoctalBrand';
 
 function MovieCard({ m }: { m: TmdbMovieListItem }) {
   return (
@@ -148,9 +149,10 @@ export default function EmCartazPage() {
       <header className="border-b border-slate-200 bg-white px-4 py-4 shadow-sm">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <Link to="/" className="rounded-full p-2 text-slate-700 hover:bg-slate-100" aria-label="Início">
+            <Link to="/" className="noctal-icon-btn shrink-0 !p-2" aria-label="Início">
               <ArrowLeft className="h-5 w-5" />
             </Link>
+            <NoctalBrand showText={false} />
             <Film className="h-7 w-7 text-slate-600" />
             <div>
               <h1 className="text-lg font-black uppercase tracking-wide text-slate-900">Filmes</h1>
@@ -165,7 +167,7 @@ export default function EmCartazPage() {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Pesquisar qualquer filme…"
               autoComplete="off"
-              className="w-full rounded-full border border-slate-200 bg-[#f0f2f5] py-2.5 pl-10 pr-4 text-sm font-medium text-slate-800 outline-none focus:ring-2 focus:ring-slate-300"
+              className="noctal-search-input !pl-10"
             />
           </div>
         </div>

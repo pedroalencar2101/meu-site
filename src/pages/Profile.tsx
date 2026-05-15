@@ -1,9 +1,4 @@
 import {
-  Search,
-  Home,
-  Users,
-  MessageCircle,
-  Bell,
   Camera,
   Edit3,
   Plus,
@@ -11,7 +6,6 @@ import {
   GraduationCap,
   Film,
   Send,
-  UserRoundSearch,
   Settings,
   X,
   Loader2,
@@ -31,8 +25,11 @@ import { buildDisplaySearch } from '../utils/userDisplaySearch';
 import { formatPostTime } from '../utils/formatPostTime';
 import CommentsModal from '../components/CommentsModal';
 import MobileBottomNav from '../components/MobileBottomNav';
+import AppTopBar from '../components/AppTopBar';
+import { subscribeMyNotifications } from '../services/notifications';
 import FollowButton from '../components/FollowButton';
-import UserListRow from '../components/UserListRow';
+import UserListCard from '../components/UserListCard';
+import UserListPanel from '../components/UserListPanel';
 import { deletePost } from '../services/feedPosts';
 import WatchlistHomePanel from '../components/WatchlistHomePanel';
 import { useLiveUserCard } from '../hooks/useLiveUserCard';
@@ -122,8 +119,8 @@ export default function NoctalProfile() {
   const migratedDisplaySearch = useRef(false);
   const [profile, setProfile] = useState<FirestoreUserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
   const [newPostText, setNewPostText] = useState('');
+  const [notifUnread, setNotifUnread] = useState(0);
   const [isSubmittingPost, setIsSubmittingPost] = useState(false);
   const [commentsPostId, setCommentsPostId] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -179,8 +176,6 @@ export default function NoctalProfile() {
 
   const profileOwnerUid = routeUid ?? authUser?.uid;
   const isOwnProfile = !!(authUser && profileOwnerUid && authUser.uid === profileOwnerUid);
-  const onOwnProfileRoute = !routeUid;
-
   const {
     posts: authorPosts,
     error: authorPostsError,
@@ -199,8 +194,16 @@ export default function NoctalProfile() {
   }, []);
 
   useEffect(() => {
-    setSearchQuery('');
-  }, [profileTab]);
+    if (!authUser?.uid) {
+      const t = setTimeout(() => setNotifUnread(0), 0);
+      return () => clearTimeout(t);
+    }
+    return subscribeMyNotifications(
+      authUser.uid,
+      (list) => setNotifUnread(list.filter((n) => !n.read).length),
+      (e) => console.error(e)
+    );
+  }, [authUser?.uid]);
 
   useEffect(() => {
     if (!profileOwnerUid) {
@@ -352,17 +355,6 @@ export default function NoctalProfile() {
   const displayPosts: UiPost[] = isOwnProfile ? myPostsFromFeed : authorPosts;
   const postsListError = isOwnProfile ? error : authorPostsError;
   const reactToPost = isOwnProfile ? handleReaction : handleAuthorPostReaction;
-
-  const q = searchQuery.trim().toLowerCase();
-  const filteredDisplayPosts: UiPost[] = useMemo(() => {
-    if (!q) return displayPosts;
-    return displayPosts.filter(
-      (post) =>
-        post.content.toLowerCase().includes(q) ||
-        post.authorName.toLowerCase().includes(q) ||
-        (post.movie?.title && post.movie.title.toLowerCase().includes(q))
-    );
-  }, [displayPosts, q]);
 
   const coverSrc =
     (profile?.coverPhotoDataUrl && profile.coverPhotoDataUrl.trim()) ||
@@ -699,90 +691,15 @@ export default function NoctalProfile() {
 
   return (
     <div className="relative min-h-dvh w-full max-w-[100vw] bg-[#f0f2f5] font-sans text-slate-900 selection:bg-slate-300 [overflow-x:clip] pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0">
-      <nav className="fixed left-0 right-0 top-0 z-50 border-b border-slate-200/90 bg-white/95 shadow-sm backdrop-blur-md supports-[backdrop-filter]:bg-white/90">
-        <div className="mx-auto flex w-full max-w-[100vw] min-w-0 items-center gap-2 px-2 py-2 sm:gap-3 sm:px-4 sm:py-2.5 lg:max-w-[1200px]">
-          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-            <Link to="/" className="shrink-0">
-              <img src="/logo.png" alt="Noctal" className="h-8 w-auto max-h-9 object-contain sm:h-9" />
-            </Link>
-            <h1 className="hidden shrink-0 font-black uppercase tracking-widest text-slate-800 min-[400px]:block sm:text-xl">Noctal</h1>
-            <div className="group relative min-w-0 flex-1 max-w-[min(100%,18rem)] sm:max-w-xs md:max-w-sm lg:max-w-md">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-slate-700 sm:left-3" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Pesquisar posts…"
-                className="w-full min-w-0 rounded-full border border-transparent bg-[#f0f2f5] py-2 pl-8 pr-3 text-sm font-medium text-slate-700 outline-none transition-all placeholder:text-slate-500 focus:border-slate-200 focus:ring-2 focus:ring-slate-300/80 sm:pl-9 sm:pr-4"
-              />
-            </div>
-          </div>
+      <AppTopBar
+        activeNav={isOwnProfile ? 'profile' : 'home'}
+        user={authUser}
+        notifUnread={notifUnread}
+        navAvatarSrc={viewerNavAvatarSrc}
+        navAvatarInitials={viewerNavInitials}
+        navAvatarAlt={viewerCommentName}
+      />
 
-          <div className="hidden shrink-0 items-center gap-0.5 rounded-2xl bg-slate-100/80 p-1 ring-1 ring-slate-200/60 lg:flex">
-            <Link
-              to="/"
-              className="flex min-h-[2.75rem] min-w-[2.75rem] items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-white/90 hover:text-slate-800"
-              title="Início"
-            >
-              <Home className="h-6 w-6" />
-            </Link>
-            <Link
-              to="/profile"
-              className={`flex min-h-[2.75rem] min-w-[2.75rem] items-center justify-center rounded-xl transition-colors hover:bg-white/90 ${
-                onOwnProfileRoute ? 'border-b-[3px] border-slate-800 text-slate-800' : 'text-slate-500'
-              }`}
-              title="Perfil"
-            >
-              <Users className="h-6 w-6" />
-            </Link>
-            <Link
-              to="/em-cartaz"
-              className="flex min-h-[2.75rem] min-w-[2.75rem] items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-white/90 hover:text-slate-800"
-              title="Filmes"
-            >
-              <Film className="h-6 w-6" />
-            </Link>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-            <Link
-              to="/explorar"
-              className="hidden rounded-full bg-[#f0f2f5] p-2 text-slate-700 transition-all hover:bg-slate-200 min-[420px]:inline-flex"
-              aria-label="Procurar pessoas"
-            >
-              <UserRoundSearch className="h-5 w-5" />
-            </Link>
-            <Link
-              to="/mensagens"
-              className="rounded-full bg-[#f0f2f5] p-2 text-slate-700 transition-all hover:bg-slate-200 sm:p-2.5"
-              aria-label="Mensagens"
-            >
-              <MessageCircle className="h-5 w-5" />
-            </Link>
-            <Link
-              to="/notificacoes"
-              className="rounded-full bg-[#f0f2f5] p-2 text-slate-700 transition-all hover:bg-slate-200 sm:p-2.5"
-              aria-label="Notificações"
-            >
-              <Bell className="h-5 w-5" />
-            </Link>
-            <Link to="/profile" className="ml-0.5 flex shrink-0 rounded-full transition-all hover:bg-slate-100 sm:ml-1">
-              {viewerNavAvatarSrc ? (
-                <img
-                  src={viewerNavAvatarSrc}
-                  alt=""
-                  referrerPolicy="no-referrer"
-                  className="h-9 w-9 rounded-full border border-slate-300 object-cover shadow-sm sm:h-10 sm:w-10"
-                />
-              ) : (
-                <div className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-300 bg-gradient-to-tr from-slate-700 to-slate-900 text-xs font-bold text-white shadow-sm sm:h-10 sm:w-10 sm:text-sm">
-                  {viewerNavInitials}
-                </div>
-              )}
-            </Link>
-          </div>
-        </div>
-      </nav>
 
       <input ref={coverFileRef} type="file" accept="image/*" className="hidden" onChange={onCoverFileChange} />
       <input ref={avatarFileRef} type="file" accept="image/*" className="hidden" onChange={onAvatarFileChange} />
@@ -1127,17 +1044,15 @@ export default function NoctalProfile() {
                 <h2 className="text-xl font-bold text-slate-900">{isOwnProfile ? 'Os meus posts' : 'Posts'}</h2>
               </div>
 
-          {filteredDisplayPosts.length === 0 && (
+          {displayPosts.length === 0 && (
             <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm font-medium text-slate-500">
-              {q
-                ? 'Nenhum post corresponde à pesquisa.'
-                : isOwnProfile
-                  ? 'Ainda não tens posts públicos. Publica algo acima ou volta ao feed.'
-                  : 'Ainda não há posts públicos aqui.'}
+              {isOwnProfile
+                ? 'Ainda não tens posts públicos. Publica algo acima ou volta ao feed.'
+                : 'Ainda não há posts públicos aqui.'}
             </div>
           )}
 
-          {filteredDisplayPosts.map((post: UiPost) => (
+          {displayPosts.map((post: UiPost) => (
             <FeedPost
               key={post.id}
               post={post}
@@ -1240,40 +1155,32 @@ export default function NoctalProfile() {
         )}
 
         {profileTab === 'friends' && profileOwnerUid && (
-          <div className="mx-auto flex min-h-[52vh] w-full max-w-3xl flex-col justify-center py-12 md:min-h-[56vh]">
-            <div className="grid w-full gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-100 px-4 py-3">
-                <h2 className="text-sm font-black uppercase tracking-wide text-slate-800">Seguidores</h2>
-                <Link to={`/u/${profileOwnerUid}/seguidores`} className="mt-1 inline-block text-xs font-bold text-amber-800 underline">
-                  Ver todos
-                </Link>
-              </div>
-              <ul className="divide-y divide-slate-100">
-                {followerRows.length === 0 ? (
-                  <li className="px-4 py-8 text-center text-sm text-slate-500">Sem seguidores ainda.</li>
-                ) : (
-                  followerRows.map((r) => <UserListRow key={r.id} uid={r.followerId} hint="Perfil" />)
-                )}
-              </ul>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-100 px-4 py-3">
-                <h2 className="text-sm font-black uppercase tracking-wide text-slate-800">Seguindo</h2>
-                <Link to={`/u/${profileOwnerUid}/seguindo`} className="mt-1 inline-block text-xs font-bold text-amber-800 underline">
-                  Ver todos
-                </Link>
-              </div>
-              <ul className="divide-y divide-slate-100">
-                {followingRows.length === 0 ? (
-                  <li className="px-4 py-8 text-center text-sm text-slate-500">
-                    {isOwnProfile ? 'Ainda não segues ninguém.' : 'Ainda não segue ninguém.'}
-                  </li>
-                ) : (
-                  followingRows.map((r) => <UserListRow key={r.id} uid={r.followingId} hint="Perfil" />)
-                )}
-              </ul>
-            </div>
+          <div className="mx-auto w-full max-w-4xl space-y-6 py-6 md:py-8">
+            <div className="grid gap-6 lg:grid-cols-2">
+              <UserListPanel
+                title="Seguidores"
+                description="Quem acompanha este perfil"
+                viewAllHref={`/u/${profileOwnerUid}/seguidores`}
+                count={followerRows.length}
+                isEmpty={followerRows.length === 0}
+                emptyTitle="Sem seguidores ainda"
+              >
+                {followerRows.map((r) => (
+                  <UserListCard key={r.id} uid={r.followerId} showChevron />
+                ))}
+              </UserListPanel>
+              <UserListPanel
+                title="Seguindo"
+                description="Contas que este perfil segue"
+                viewAllHref={`/u/${profileOwnerUid}/seguindo`}
+                count={followingRows.length}
+                isEmpty={followingRows.length === 0}
+                emptyTitle={isOwnProfile ? 'Ainda não segues ninguém' : 'Ainda não segue ninguém'}
+              >
+                {followingRows.map((r) => (
+                  <UserListCard key={r.id} uid={r.followingId} showChevron />
+                ))}
+              </UserListPanel>
             </div>
           </div>
         )}

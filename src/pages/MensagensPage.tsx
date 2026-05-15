@@ -14,6 +14,8 @@ import { onAuthStateChanged, type User } from 'firebase/auth';
 import { ArrowLeft, MessageCircle, Clock, Users as UsersIcon } from 'lucide-react';
 import { auth, db } from '../services/firebase';
 import MobileBottomNav from '../components/MobileBottomNav';
+import UserListCard from '../components/UserListCard';
+import UserListPanel from '../components/UserListPanel';
 
 type PeerRow = {
   uid: string;
@@ -163,51 +165,36 @@ export default function MensagensPage() {
             <Clock className="h-4 w-4" />
             <h2 className="text-[13px] font-black uppercase tracking-widest text-slate-500">Recentes</h2>
           </div>
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            {peersWithPhotos.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                <MessageCircle className="h-12 w-12 text-slate-300 mb-3" />
-                <p className="text-[15px] font-bold text-slate-900">Nenhuma conversa ainda</p>
-                <p className="mt-1 text-[14px] text-slate-500 max-w-xs">
-                  Inicie uma conversa escolhendo alguém da sua rede abaixo.
-                </p>
-              </div>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {peersWithPhotos.map((r) => (
-                  <li key={r.uid} className="transition-colors hover:bg-slate-50">
-                    <Link to={`/mensagens/${r.uid}`} className="flex min-w-0 flex-1 items-center gap-4 px-4 py-4 sm:px-5">
-                      <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
-                        {r.photo ? (
-                          <img src={r.photo} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center bg-gradient-to-tr from-slate-200 to-slate-300 text-sm font-black text-slate-600">
-                            {r.initials}
-                          </div>
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between">
-                          <p className="truncate text-[16px] font-bold text-slate-900">{r.label}</p>
-                          {r.at > 0 && (
-                            <span className="text-[12px] font-medium text-slate-400">
-                              {new Date(r.at).toLocaleString('pt-BR', {
-                                day: 'numeric',
-                                month: 'short',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-0.5 truncate text-[14px] text-slate-500">{r.preview || '…'}</p>
-                      </div>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          <UserListPanel
+            title="Conversas"
+            count={peersWithPhotos.length}
+            isEmpty={peersWithPhotos.length === 0}
+            emptyTitle="Nenhuma conversa ainda"
+            emptyDescription="Inicia uma conversa escolhendo alguém da tua rede abaixo."
+            className="!shadow-sm"
+          >
+            {peersWithPhotos.map((r) => (
+              <UserListCard
+                key={r.uid}
+                uid={r.uid}
+                name={r.label}
+                photo={r.photo}
+                subtitle={r.preview || '…'}
+                meta={
+                  r.at > 0
+                    ? new Date(r.at).toLocaleString('pt-BR', {
+                        day: 'numeric',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : undefined
+                }
+                linkTo={`/mensagens/${r.uid}`}
+                showChevron
+              />
+            ))}
+          </UserListPanel>
         </section>
 
         <section className="pb-10">
@@ -215,34 +202,32 @@ export default function MensagensPage() {
             <UsersIcon className="h-4 w-4" />
             <h2 className="text-[13px] font-black uppercase tracking-widest text-slate-500">Nova Conversa</h2>
           </div>
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <ul className="divide-y divide-slate-100">
-              {directory.map((r) => (
-                <li key={r.id} className="flex items-stretch transition-colors hover:bg-slate-50">
-                  <Link to={`/mensagens/${r.id}`} className="flex min-w-0 flex-1 items-center gap-4 px-4 py-3 sm:px-5">
-                    <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
-                      {r.photo ? (
-                        <img src={r.photo} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-[12px] font-black text-slate-600 bg-gradient-to-tr from-slate-200 to-slate-300">
-                          {r.initials}
-                        </div>
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[15px] font-bold text-slate-900">{r.label}</p>
-                    </div>
-                    <div className="flex items-center justify-center rounded-full bg-slate-100 p-2 text-slate-600 transition hover:bg-slate-200">
-                      <MessageCircle className="h-4 w-4" />
-                    </div>
-                  </Link>
-                </li>
-              ))}
-              {directory.length === 0 && (
-                <li className="p-6 text-center text-[14px] text-slate-500">Nenhum utilizador encontrado.</li>
-              )}
-            </ul>
-          </div>
+          <UserListPanel
+            title="Contactos"
+            description="Escolhe alguém para enviar mensagem"
+            count={directory.length}
+            isEmpty={directory.length === 0}
+            emptyTitle="Nenhum utilizador encontrado"
+            variant="grid"
+            className="!shadow-sm"
+          >
+            {directory.map((r) => (
+              <UserListCard
+                key={r.id}
+                uid={r.id}
+                name={r.label}
+                photo={r.photo}
+                layout="card"
+                linkTo={`/mensagens/${r.id}`}
+                showChevron={false}
+                trailing={
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+                    <MessageCircle className="h-4 w-4" />
+                  </span>
+                }
+              />
+            ))}
+          </UserListPanel>
         </section>
       </main>
       <MobileBottomNav />

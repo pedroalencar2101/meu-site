@@ -1,25 +1,29 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft, Search, UserRoundSearch } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, UserRoundSearch } from 'lucide-react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { searchUsersByPrefix, type PublicUserRow } from '../services/userSearch';
-import FollowButton from '../components/FollowButton';
 import MobileBottomNav from '../components/MobileBottomNav';
+import GlobalUserSearch from '../components/GlobalUserSearch';
+import NoctalBrand from '../components/NoctalBrand';
+import UserListCard from '../components/UserListCard';
+import UserListPanel from '../components/UserListPanel';
 
 export default function ExplorarPessoasPage() {
+  const [searchParams] = useSearchParams();
+  const initialQ = searchParams.get('q') ?? '';
+
   const [user, setUser] = useState<User | null>(auth.currentUser);
-  const [q, setQ] = useState('');
-  const [debounced, setDebounced] = useState('');
+  const [debounced, setDebounced] = useState(initialQ.trim());
   const [rows, setRows] = useState<PublicUserRow[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
 
   useEffect(() => {
-    const t = window.setTimeout(() => setDebounced(q.trim()), 350);
-    return () => window.clearTimeout(t);
-  }, [q]);
+    setDebounced(initialQ.trim());
+  }, [initialQ]);
 
   useEffect(() => {
     if (debounced.length < 2) {
@@ -29,8 +33,10 @@ export default function ExplorarPessoasPage() {
     let cancelled = false;
     setLoading(true);
     searchUsersByPrefix(debounced, user?.uid).then((r) => {
-      if (!cancelled) setRows(r);
-      if (!cancelled) setLoading(false);
+      if (!cancelled) {
+        setRows(r);
+        setLoading(false);
+      }
     });
     return () => {
       cancelled = true;
@@ -39,65 +45,64 @@ export default function ExplorarPessoasPage() {
 
   return (
     <div className="relative min-h-dvh w-full max-w-[100vw] bg-[#f0f2f5] font-sans text-slate-900 [overflow-x:clip] pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-8">
-      <header className="border-b border-slate-200 bg-white px-4 py-4 shadow-sm">
-        <div className="mx-auto flex max-w-lg items-center gap-3">
-          <Link to="/" className="rounded-full p-2 text-slate-700 hover:bg-slate-100" aria-label="Início">
+      <header className="sticky top-0 z-40 border-b border-slate-200/90 bg-white/95 shadow-sm backdrop-blur-md">
+        <div className="mx-auto flex max-w-lg items-center gap-3 px-4 py-3">
+          <Link to="/" className="noctal-icon-btn shrink-0 !p-2" aria-label="Início">
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <UserRoundSearch className="h-6 w-6 text-slate-600" />
-          <div>
-            <h1 className="text-lg font-black uppercase tracking-wide text-slate-900">Procurar pessoas</h1>
-            <p className="text-xs font-medium text-slate-500">Mínimo 2 letras · nome ou parte do e-mail</p>
+          <NoctalBrand showText={false} />
+          <div className="min-w-0 flex-1">
+            <h1 className="flex items-center gap-2 text-base font-black uppercase tracking-wide text-slate-900">
+              <UserRoundSearch className="h-5 w-5 text-slate-600" />
+              Pessoas
+            </h1>
+            <p className="text-xs font-medium text-slate-500">Nome ou e-mail · mín. 2 letras</p>
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-lg px-4 py-6">
-        <div className="relative mb-6">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input
-            type="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Ex.: pedro, maria…"
-            autoComplete="off"
-            className="w-full rounded-full border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm font-medium text-slate-800 outline-none focus:ring-2 focus:ring-slate-300"
-          />
-        </div>
+        <GlobalUserSearch
+          variant="page"
+          excludeUid={user?.uid}
+          viewerId={user?.uid}
+          initialQuery={initialQ}
+          className="mb-6 max-w-none"
+        />
 
         {debounced.length > 0 && debounced.length < 2 && (
-          <p className="text-center text-sm text-slate-500">Escreve pelo menos 2 caracteres.</p>
+          <p className="mb-4 text-center text-sm text-slate-500">Escreve pelo menos 2 caracteres.</p>
         )}
 
-        {loading && <p className="text-center text-sm text-slate-500">A pesquisar…</p>}
+        {loading && <p className="mb-4 text-center text-sm text-slate-500">A pesquisar…</p>}
 
-        {!loading && debounced.length >= 2 && rows.length === 0 && (
-          <p className="text-center text-sm text-slate-500">Nenhum utilizador encontrado.</p>
+        {!loading && debounced.length >= 2 && (
+          <UserListPanel
+            title="Resultados"
+            count={rows.length}
+            isEmpty={rows.length === 0}
+            variant="grid"
+            emptyTitle="Nenhum utilizador encontrado"
+            emptyDescription="Tenta outro nome ou parte do e-mail."
+          >
+            {rows.map((r) => (
+              <UserListCard
+                key={r.id}
+                uid={r.id}
+                name={r.fullName}
+                photo={r.photoURL}
+                email={r.email}
+                layout="card"
+                viewerId={user?.uid}
+                showFollow
+                showChevron={false}
+              />
+            ))}
+          </UserListPanel>
         )}
 
-        <ul className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          {rows.map((r) => (
-            <li key={r.id} className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0">
-              <Link to={`/u/${r.id}`} className="flex min-w-0 flex-1 items-center gap-3">
-                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-800 text-xs font-bold text-white">
-                  {r.photoURL ? (
-                    <img src={r.photoURL} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
-                  ) : (
-                    r.fullName.slice(0, 2).toUpperCase()
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate font-bold text-slate-900">{r.fullName}</p>
-                  {r.email && <p className="truncate text-xs text-slate-500">{r.email}</p>}
-                </div>
-              </Link>
-              {user && <FollowButton viewerId={user.uid} targetId={r.id} />}
-            </li>
-          ))}
-        </ul>
-
-        <p className="mt-8 text-center text-xs text-slate-500">
-          Contas antigas sem campo de pesquisa podem não aparecer até atualizarem o perfil ou voltarem a guardar dados em Firestore.
+        <p className="mt-8 text-center text-xs leading-relaxed text-slate-500">
+          Contas antigas sem campo de pesquisa podem não aparecer até atualizarem o perfil.
         </p>
       </main>
       <MobileBottomNav />

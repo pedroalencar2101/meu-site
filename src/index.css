@@ -37,6 +37,94 @@
   }
 }
 
+@layer components {
+  /* Marca NOCTAL — cinza metalizado com brilho sutil */
+  .noctal-brand-link {
+    @apply relative inline-flex shrink-0 items-center gap-2 rounded-lg outline-none transition-all duration-300 ease-out sm:gap-2.5;
+  }
+
+  .noctal-brand-link:focus-visible {
+    @apply ring-2 ring-slate-400/60 ring-offset-2;
+  }
+
+  .noctal-brand-link:hover .noctal-brand-logo {
+    @apply scale-105;
+    filter: drop-shadow(0 2px 8px rgba(100, 116, 139, 0.35));
+  }
+
+  .noctal-brand-link:hover .noctal-brand-text {
+    background-position: 100% 50%;
+    filter: drop-shadow(0 0 14px rgba(203, 213, 225, 0.55));
+  }
+
+  .noctal-brand-logo {
+    @apply h-8 w-auto max-h-9 object-contain transition-all duration-300 ease-out sm:h-9;
+  }
+
+  .noctal-brand-text {
+    @apply hidden font-black uppercase tracking-[0.2em] min-[400px]:inline sm:text-base;
+    font-size: 0.8125rem;
+    background: linear-gradient(
+      120deg,
+      #64748b 0%,
+      #cbd5e1 18%,
+      #f1f5f9 32%,
+      #94a3b8 48%,
+      #e2e8f0 62%,
+      #475569 78%,
+      #94a3b8 100%
+    );
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    transition: background-position 0.45s ease, filter 0.35s ease;
+  }
+
+  /* Botão ícone da barra superior */
+  .noctal-icon-btn {
+    @apply inline-flex items-center justify-center rounded-full p-2 text-slate-600 transition-all duration-200 ease-out sm:p-2.5;
+    @apply hover:bg-slate-200/80 hover:text-slate-900 hover:shadow-sm active:scale-95;
+  }
+
+  .noctal-icon-btn:focus-visible {
+    @apply outline-none ring-2 ring-slate-400/50 ring-offset-1;
+  }
+
+  /* Pílula de navegação desktop */
+  .noctal-nav-pill {
+    @apply flex min-h-[2.75rem] min-w-[2.75rem] items-center justify-center rounded-xl text-slate-500 transition-all duration-200 ease-out;
+    @apply hover:bg-white/90 hover:text-slate-800 hover:shadow-sm active:scale-95;
+  }
+
+  .noctal-nav-pill--active {
+    @apply border-b-[3px] border-slate-800 bg-white/60 text-slate-800 shadow-sm;
+  }
+
+  /* Campo de pesquisa global */
+  .noctal-search-input {
+    @apply w-full min-w-0 rounded-full border border-transparent bg-[#f0f2f5] py-2 pl-9 pr-9 text-sm font-medium text-slate-700 outline-none transition-all duration-200 ease-out;
+    @apply placeholder:text-slate-500;
+    @apply hover:border-slate-200/80 hover:bg-white/80;
+    @apply focus:border-slate-300 focus:bg-white focus:shadow-md focus:ring-2 focus:ring-slate-300/50;
+  }
+
+  /* Botão primário */
+  .noctal-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-slate-800 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition-all duration-200 ease-out;
+    @apply hover:bg-slate-900 hover:shadow-md active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:shadow-sm;
+  }
+
+  /* Cartão / link interativo */
+  .noctal-interactive {
+    @apply transition-all duration-200 ease-out;
+  }
+
+  .noctal-interactive:hover {
+    @apply shadow-md;
+  }
+}
+
 @layer utilities {
   .scrollbar-thin-none {
     scrollbar-width: none;
@@ -61,6 +149,15 @@
   }
   100% {
     transform: translateX(0);
+  }
+}
+
+@keyframes noctal-shine {
+  0% {
+    background-position: 200% center;
+  }
+  100% {
+    background-position: -200% center;
   }
 }
 

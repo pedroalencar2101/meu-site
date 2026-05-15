@@ -39,7 +39,7 @@ function MovieBannerStrip({ m, dimmed }: { m: WatchlistMovie; dimmed?: boolean }
     <div className="flex h-14 shrink-0 gap-2">
       <div className="h-14 w-10 overflow-hidden rounded-lg bg-slate-200">
         {m.posterPath ? (
-          <img src={posterUrl(m.posterPath, 'w92')} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+          <img src={posterUrl(m.posterPath, 'w185')} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
         ) : (
           <div className="flex h-full items-center justify-center text-[8px] font-bold text-slate-500">—</div>
         )}
@@ -172,7 +172,7 @@ export default function WatchlistHomePanel({ uid, isOwner = true }: Props) {
                       <li key={m.id} className="flex items-center gap-2 px-2 py-2">
                         <div className="h-12 w-8 shrink-0 overflow-hidden rounded bg-slate-800">
                           {m.poster_path ? (
-                            <img src={posterUrl(m.poster_path, 'w92')} alt="" className="h-full w-full object-cover" />
+                            <img src={posterUrl(m.poster_path, 'w185')} alt="" className="h-full w-full object-cover" />
                           ) : (
                             <div className="flex h-full items-center justify-center text-[8px] text-slate-500">—</div>
                           )}

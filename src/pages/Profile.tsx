@@ -9,13 +9,8 @@ import {
   Plus,
   MapPin,
   GraduationCap,
-  MoreHorizontal,
   Film,
-  ThumbsUp,
-  ThumbsDown,
-  Share2,
   Send,
-  Star,
   UserRoundSearch,
   Settings,
   X,
@@ -34,7 +29,6 @@ import { usePostsByAuthor } from '../hooks/usePostsByAuthor';
 import { useFollowCounts } from '../hooks/useFollowCounts';
 import { buildDisplaySearch } from '../utils/userDisplaySearch';
 import { formatPostTime } from '../utils/formatPostTime';
-import { sharePostContent } from '../utils/sharePost';
 import CommentsModal from '../components/CommentsModal';
 import MobileBottomNav from '../components/MobileBottomNav';
 import FollowButton from '../components/FollowButton';
@@ -132,7 +126,6 @@ export default function NoctalProfile() {
   const [newPostText, setNewPostText] = useState('');
   const [isSubmittingPost, setIsSubmittingPost] = useState(false);
   const [commentsPostId, setCommentsPostId] = useState<string | null>(null);
-  const [postMenuId, setPostMenuId] = useState<string | null>(null);
   const navigate = useNavigate();
   const [sharePost, setSharePost] = useState<{ id: string; content: string } | null>(null);
   const [confirmDeletePostId, setConfirmDeletePostId] = useState<string | null>(null);
@@ -199,7 +192,6 @@ export default function NoctalProfile() {
   const viewerNavInitials = liveViewer?.initials ?? initialsFromUser(authUser, null);
   const viewerCommentName = liveViewer?.label?.trim() || authUser?.displayName || authUser?.email || 'Utilizador';
   const viewerCommentInitials = liveViewer?.initials ?? initialsFromUser(authUser, null);
-
   const { followers, following } = useFollowCounts(profileOwnerUid);
 
   useEffect(() => {
@@ -209,12 +201,6 @@ export default function NoctalProfile() {
   useEffect(() => {
     setSearchQuery('');
   }, [profileTab]);
-
-  useEffect(() => {
-    const close = () => setPostMenuId(null);
-    window.addEventListener('click', close);
-    return () => window.removeEventListener('click', close);
-  }, []);
 
   useEffect(() => {
     if (!profileOwnerUid) {
@@ -676,10 +662,6 @@ export default function NoctalProfile() {
     } finally {
       setIsSubmittingPost(false);
     }
-  };
-
-  const onShare = (text: string) => {
-    void sharePostContent(text, typeof window !== 'undefined' ? window.location.href : undefined);
   };
 
   const handleDeletePost = async (postId: string) => {

@@ -1,7 +1,9 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { useState, useEffect, type ReactElement } from 'react';
+import { useState, useEffect, type ReactElement, useRef } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './services/firebase';
+import { goOnline, goOffline } from './services/presence';
+import { usePushNotifications } from './hooks/usePushNotifications';
 
 import Login from './pages/Login';
 import Home from './pages/Home';
@@ -25,12 +27,49 @@ export default function App() {
   const [user, setUser] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
 
+  const uidRef = useRef<string | null>(null);
+  const [currentUid, setCurrentUid] = useState<string | undefined>(undefined);
+
+  // Hook de notificações push (só ativo quando tem uid)
+  usePushNotifications(currentUid);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
+
+      // Marca usuário anterior como offline se mudou de conta
+      if (uidRef.current && uidRef.current !== currentUser?.uid) {
+        goOffline(uidRef.current);
+      }
+
+      // Marca novo usuário como online
+      if (currentUser?.uid) {
+        uidRef.current = currentUser.uid;
+        setCurrentUid(currentUser.uid);
+        goOnline(currentUser.uid);
+      } else {
+        uidRef.current = null;
+        setCurrentUid(undefined);
+      }
     });
     return () => unsubscribe();
+  }, []);
+
+  // Marca offline ao fechar/recarregar a página
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (uidRef.current) {
+        goOffline(uidRef.current);
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (uidRef.current) {
+        goOffline(uidRef.current);
+      }
+    };
   }, []);
 
   if (loading) {

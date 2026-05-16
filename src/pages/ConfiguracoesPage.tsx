@@ -2,18 +2,22 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
-import { Bell, ChevronRight, LogOut, Shield, UserRound } from 'lucide-react';
+import { Bell, ChevronRight, LogOut, Shield, UserRound, MessageCircle, BellRing, BellOff } from 'lucide-react';
 import { auth, db } from '../services/firebase';
 import AppPageShell from '../components/AppPageShell';
+import { CHAT_THEMES, DEFAULT_CHAT_THEME, type ChatThemeId } from '../utils/chatThemes';
+import { isNotificationSupported, hasNotificationPermission, requestNotificationPermission } from '../services/webPushNotifications';
 
 type UserPrefs = {
   compactFeed: boolean;
   cinemaDigest: boolean;
+  chatTheme: ChatThemeId;
 };
 
 const defaultPrefs: UserPrefs = {
   compactFeed: false,
   cinemaDigest: true,
+  chatTheme: DEFAULT_CHAT_THEME,
 };
 
 export default function ConfiguracoesPage() {
@@ -28,11 +32,7 @@ export default function ConfiguracoesPage() {
 
   useEffect(() => {
     const u = user;
-    if (!u) {
-      setPrefs(defaultPrefs);
-      setLoadingDoc(false);
-      return;
-    }
+    if (!u) return;
     let cancelled = false;
     setLoadingDoc(true);
     getDoc(doc(db, 'users', u.uid))
@@ -42,6 +42,7 @@ export default function ConfiguracoesPage() {
         setPrefs({
           compactFeed: p?.compactFeed === true,
           cinemaDigest: p?.cinemaDigest !== false,
+          chatTheme: (p?.chatTheme as ChatThemeId) ?? DEFAULT_CHAT_THEME,
         });
       })
       .finally(() => {
@@ -63,6 +64,7 @@ export default function ConfiguracoesPage() {
           prefs: {
             compactFeed: next.compactFeed,
             cinemaDigest: next.cinemaDigest,
+            chatTheme: next.chatTheme,
           },
           updatedAt: serverTimestamp(),
         },
@@ -96,6 +98,7 @@ export default function ConfiguracoesPage() {
         <p className="text-center text-sm font-medium text-slate-500">Inicia sessão para acederes às definições.</p>
       ) : (
         <div className="space-y-6">
+          {/* Conta */}
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
               <h2 className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.15em] text-slate-500">
@@ -119,6 +122,7 @@ export default function ConfiguracoesPage() {
             </div>
           </section>
 
+          {/* Experiência */}
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
               <h2 className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.15em] text-slate-500">
@@ -160,6 +164,115 @@ export default function ConfiguracoesPage() {
             {saving && <p className="border-t border-slate-100 px-4 py-2 text-xs font-semibold text-slate-500">A guardar…</p>}
           </section>
 
+          {/* Tema do Chat */}
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
+              <h2 className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.15em] text-slate-500">
+                <MessageCircle className="h-4 w-4" /> Tema do Chat
+              </h2>
+            </div>
+            <div className="p-4">
+              <p className="text-xs font-medium text-slate-500 mb-4">
+                Escolhe um fundo para as tuas conversas privadas.
+              </p>
+              <div className="grid grid-cols-4 gap-3 sm:grid-cols-7">
+                {CHAT_THEMES.map((theme) => (
+                  <button
+                    key={theme.id}
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void persistPrefs({ chatTheme: theme.id })}
+                    className={`relative flex flex-col items-center gap-1.5 rounded-xl p-3 transition-all duration-200 ${
+                      prefs.chatTheme === theme.id
+                        ? 'ring-2 ring-slate-800 ring-offset-2 shadow-md scale-105'
+                        : 'hover:shadow-sm hover:scale-105 border border-slate-200'
+                    } ${theme.bg}`}
+                    title={theme.label}
+                  >
+                    <div className={`h-8 w-8 rounded-full border border-slate-200/50 shadow-inner ${theme.bg}`} />
+                    <span className={`text-[10px] font-bold text-center leading-tight ${
+                      theme.id === 'dark' ? 'text-white' : 'text-slate-700'
+                    }`}>
+                      {theme.label}
+                    </span>
+                    {prefs.chatTheme === theme.id && (
+                      <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-slate-800 border-2 border-white" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* Notificações Push */}
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
+              <h2 className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.15em] text-slate-500">
+                <BellRing className="h-4 w-4" /> Notificações Push
+              </h2>
+            </div>
+            <div className="px-4 py-4">
+              {!isNotificationSupported() ? (
+                <p className="text-sm font-medium text-slate-500">
+                  O teu navegador não suporta notificações push.
+                </p>
+              ) : hasNotificationPermission() ? (
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+                    <BellRing className="h-5 w-5 text-emerald-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">Notificações ativadas</p>
+                    <p className="mt-0.5 text-xs font-medium leading-relaxed text-slate-500">
+                      Vais receber notificações no teu dispositivo quando receberes mensagens ou interações, mesmo fora do navegador.
+                    </p>
+                  </div>
+                </div>
+              ) : Notification.permission === 'denied' ? (
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100">
+                    <BellOff className="h-5 w-5 text-red-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">Notificações bloqueadas</p>
+                    <p className="mt-0.5 text-xs font-medium leading-relaxed text-slate-500">
+                      As notificações foram bloqueadas pelo teu navegador. Para reativar, atualiza as permissões nas definições do site.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100">
+                      <Bell className="h-5 w-5 text-amber-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-900">Ativar notificações push</p>
+                      <p className="mt-0.5 text-xs font-medium leading-relaxed text-slate-500">
+                        Recebe notificações no teu dispositivo quando receberes mensagens ou novas interações, mesmo com o site fechado.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const granted = await requestNotificationPermission();
+                      if (!granted) {
+                        alert('Permissão negada. Para reativar, atualiza as permissões nas definições do teu navegador.');
+                      }
+                      window.location.reload();
+                    }}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-slate-900 active:scale-[0.98] sm:w-auto"
+                  >
+                    <BellRing className="h-4 w-4" />
+                    Ativar notificações
+                  </button>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Sessão */}
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
               <h2 className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.15em] text-slate-500">

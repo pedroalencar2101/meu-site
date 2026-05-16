@@ -64,16 +64,17 @@ export function useNoctalFeed() {
   }));
 
   const handleCreatePost = useCallback(
-    async (text: string, movie?: UiPost['movie'] | null) => {
+    async (text: string, movie?: UiPost['movie'] | null): Promise<string | undefined> => {
       if (!user) return;
       const name = user.displayName || user.email || 'Utilizador';
-      await createPostRemote({
+      const postId = await createPostRemote({
         uid: user.uid,
         displayName: name,
         photoURL: user.photoURL,
         content: text,
         movie: movie ?? null,
       });
+      return postId;
     },
     [user]
   );

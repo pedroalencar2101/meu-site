@@ -7,6 +7,7 @@ export type WatchlistMovie = {
   posterPath: string | null;
   backdropPath: string | null;
   addedAt: number;
+  genres: string[];
 };
 
 export type WatchlistState = {
@@ -36,6 +37,7 @@ function parseList(raw: unknown): WatchlistMovie[] {
         backdropPath:
           typeof o.backdropPath === 'string' || o.backdropPath === null ? (o.backdropPath as string | null) : null,
         addedAt: typeof o.addedAt === 'number' ? o.addedAt : Date.now(),
+        genres: Array.isArray(o.genres) ? o.genres.filter((g: unknown) => typeof g === 'string').slice(0, 4) as string[] : [],
       };
     })
     .filter(Boolean) as WatchlistMovie[];
@@ -73,20 +75,26 @@ export async function patchUserWatchlist(uid: string, partial: Partial<Watchlist
   if (partial.watched !== undefined) next.watchlistWatched = partial.watched;
   await setDoc(
     ref,
-    {
-      ...next,
-      updatedAt: serverTimestamp(),
-    },
+    { ...next, updatedAt: serverTimestamp() },
     { merge: true }
   );
 }
 
-export async function addMovieToWatchlist(uid: string, m: Omit<WatchlistMovie, 'addedAt'>): Promise<void> {
+/**
+ * Busca os gêneros do filme pela TMDB e adiciona à watchlist.
+ */
+export async function addMovieToWatchlist(uid: string, m: Omit<WatchlistMovie, 'addedAt' | 'genres'> & { genres?: string[] }): Promise<void> {
   const ref = doc(db, 'users', uid);
   const snap = await getDoc(ref);
   const cur = snap.exists() ? parseWatchlistFromUserData(snap.data() as Record<string, unknown>) : { ...defaults };
   if (cur.toWatch.some((x) => x.tmdbId === m.tmdbId) || cur.watched.some((x) => x.tmdbId === m.tmdbId)) return;
-  const item: WatchlistMovie = { ...m, addedAt: Date.now() };
+
+  const item: WatchlistMovie = {
+    ...m,
+    genres: m.genres ?? [],
+    addedAt: Date.now(),
+  };
+
   const toWatch = [...cur.toWatch, item].slice(0, 200);
   await patchUserWatchlist(uid, { toWatch });
 }

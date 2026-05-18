@@ -10,6 +10,8 @@
     scroll-behavior: smooth;
     scrollbar-width: none;
     -ms-overflow-style: none;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 
   html::-webkit-scrollbar {
@@ -23,10 +25,28 @@
     overflow-x: clip;
     scrollbar-width: none;
     -ms-overflow-style: none;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 
   body::-webkit-scrollbar {
     display: none;
+  }
+
+  /* Previne zoom automático do iOS em inputs */
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+
+  @supports (-webkit-touch-callout: none) {
+    input, textarea, select {
+      font-size: 16px !important;
+    }
+  }
+
+  /* Remove o highlight azul no toque em dispositivos móveis */
+  * {
+    -webkit-tap-highlight-color: transparent;
   }
 
   #root {

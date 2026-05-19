@@ -28,39 +28,35 @@ import MobileBottomNav from '../components/MobileBottomNav';
 import AppTopBar from '../components/AppTopBar';
 import { subscribeMyNotifications } from '../services/notifications';
 import FollowButton from '../components/FollowButton';
-import UserListCard from '../components/UserListCard';
-import UserListPanel from '../components/UserListPanel';
 import { deletePost } from '../services/feedPosts';
 import WatchlistHomePanel from '../components/WatchlistHomePanel';
 import { useLiveUserCard } from '../hooks/useLiveUserCard';
 import type { UiPost } from '../types/feed';
-import { subscribeFollowersOf, subscribeFollowingOf, type FollowDoc } from '../services/follows';
 import { deleteMovieReview, subscribeMyMovieReviews } from '../services/movieReviews';
 import type { MovieReview } from '../types/movieReview';
 import ConfirmModal from '../components/ConfirmModal';
 import FeedPost from '../components/FeedPost';
 import ShareModal from '../components/ShareModal';
 import { getTmdbKey, posterUrl, tmdbGet, type TmdbMovieListItem, type TmdbSearchResponse } from '../services/tmdbClient';
+import ProfileDashboardPanel from '../components/ProfileDashboardPanel';
 import { imageFileToJpegDataUrl, isAllowedImageUrl } from '../utils/profileMedia';
 import { privacyOn, type ProfilePrivacy } from '../utils/profilePrivacy';
 
 const DEFAULT_COVER =
-  'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?q=80&w=2000&auto=format&fit=crop';
+  'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?q=85&w=2400&auto=format&fit=crop';
 
-/** Capas em alta resolução (Unsplash) — seleção rápida sem upload. */
+/** Capas cinematográficas em alta resolução (Unsplash — URLs verificadas). */
 const COVER_PRESETS = [
-  DEFAULT_COVER,
   'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?q=85&w=2400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1517604931448-7e0c8ed2963c?q=85&w=2400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1478720568477-152d9b164e26?q=85&w=2400&auto=format&fit=crop',
   'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=85&w=2400&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1517604931448-7e0c8ed2963c?q=85&w=2400&auto=format&fit=crop',
   'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?q=85&w=2400&auto=format&fit=crop',
   'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?q=85&w=2400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?q=85&w=2400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=85&w=2400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1518837695005-2083093ee35b?q=85&w=2400&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1493246507139-91e8fad9978e?q=85&w=2400&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1478720568477-152d9b164e26?q=85&w=2400&auto=format&fit=crop',
   'https://images.unsplash.com/photo-1501785888041-af3ef285b470?q=85&w=2400&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1493246507139-91e8fad9978e?q=85&w=2400&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1518837695005-2083093ee35b?q=85&w=2400&auto=format&fit=crop',
+  DEFAULT_COVER,
 ];
 
 type FavoriteMovie = {
@@ -92,7 +88,7 @@ type FirestoreUserProfile = {
   photoURL?: string;
 };
 
-type ProfileTab = 'all' | 'about' | 'friends' | 'movies';
+type ProfileTab = 'all' | 'about' | 'dashboard' | 'movies';
 
 function initialsFromUser(user: User | null, fullNameOverride?: string | null): string {
   const n = (fullNameOverride || user?.displayName || user?.email || '?').trim();
@@ -136,8 +132,7 @@ export default function NoctalProfile() {
   const [savingCover, setSavingCover] = useState(false);
   const [savingAvatar, setSavingAvatar] = useState(false);
   const [coverUrlDraft, setCoverUrlDraft] = useState('');
-  const [followerRows, setFollowerRows] = useState<FollowDoc[]>([]);
-  const [followingRows, setFollowingRows] = useState<FollowDoc[]>([]);
+  const [coverKey, setCoverKey] = useState(0);
   const [myReviews, setMyReviews] = useState<MovieReview[]>([]);
   const [deletingReviewTmdbId, setDeletingReviewTmdbId] = useState<number | null>(null);
   
@@ -287,20 +282,6 @@ export default function NoctalProfile() {
   }, [authUser, profile]);
 
   useEffect(() => {
-    if (!profileOwnerUid || profileTab !== 'friends') {
-      setFollowerRows([]);
-      setFollowingRows([]);
-      return;
-    }
-    const u1 = subscribeFollowersOf(profileOwnerUid, setFollowerRows);
-    const u2 = subscribeFollowingOf(profileOwnerUid, setFollowingRows);
-    return () => {
-      u1();
-      u2();
-    };
-  }, [profileOwnerUid, profileTab]);
-
-  useEffect(() => {
     if (!profileOwnerUid || profileTab !== 'movies') {
       setMyReviews([]);
       return;
@@ -436,6 +417,17 @@ export default function NoctalProfile() {
 
   async function persistUserPatch(data: Record<string, unknown>) {
     if (!authUser) return;
+  // Update local state first for instant feedback (no delay)
+    // IMPORTANT: strip Firestore sentinels (deleteField) before spreading into state
+    const safeData = { ...data };
+    delete safeData.coverPhotoDataUrl; // never store FieldValue sentinel in React state
+    if (data.coverPhotoUrl || data.coverPhotoDataUrl) {
+      setProfile((prev) => prev ? { ...prev, ...safeData as Partial<FirestoreUserProfile> } : prev);
+      setCoverKey((k) => k + 1);
+    }
+    if (data.avatarCustomDataUrl) {
+      setProfile((prev) => prev ? { ...prev, avatarCustomDataUrl: data.avatarCustomDataUrl as string } : prev);
+    }
     await setDoc(
       doc(db, 'users', authUser.uid),
       {
@@ -709,6 +701,7 @@ export default function NoctalProfile() {
           <div className="relative w-full">
             <div className="group relative isolate h-[200px] w-full overflow-hidden rounded-t-2xl bg-slate-950 sm:h-[260px] md:h-[300px]">
               <img
+                key={coverKey}
                 src={coverSrc}
                 alt="Capa do perfil"
                 referrerPolicy="no-referrer"
@@ -773,35 +766,19 @@ export default function NoctalProfile() {
                   </p>
                 )}
                 {profileOwnerUid && (
-                  <div className="mt-4 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-                    {isOwnProfile && (
-                      <Link
-                        to={`/u/${profileOwnerUid}`}
-                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-slate-800 hover:bg-white"
-                      >
-                        Ver público
-                      </Link>
-                    )}
+                  <div className="mt-4 flex flex-wrap items-center justify-center gap-3 sm:justify-start">
                     <Link
                       to={`/u/${profileOwnerUid}/seguidores`}
-                      className="flex items-center gap-1.5 rounded-full border border-slate-300 bg-gradient-to-b from-slate-100 to-slate-200 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-slate-700 shadow-sm transition hover:from-slate-200 hover:to-slate-300"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-4 py-1.5 text-[13px] font-bold text-slate-700 hover:bg-slate-200 transition-colors"
                     >
                       <span className="text-slate-900">{followers}</span> seguidores
                     </Link>
                     <Link
                       to={`/u/${profileOwnerUid}/seguindo`}
-                      className="flex items-center gap-1.5 rounded-full border border-slate-300 bg-gradient-to-b from-slate-100 to-slate-200 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-slate-700 shadow-sm transition hover:from-slate-200 hover:to-slate-300"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-4 py-1.5 text-[13px] font-bold text-slate-700 hover:bg-slate-200 transition-colors"
                     >
                       <span className="text-slate-900">{following}</span> seguindo
                     </Link>
-                    {authUser && (
-                      <Link
-                        to="/explorar"
-                        className="rounded-full border border-amber-300/80 bg-amber-50 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-amber-950 hover:bg-amber-100"
-                      >
-                        Procurar pessoas
-                      </Link>
-                    )}
                   </div>
                 )}
 
@@ -861,7 +838,7 @@ export default function NoctalProfile() {
           <div className="mt-3 flex flex-wrap items-center gap-1 rounded-xl border border-slate-200/80 bg-white/90 px-1 py-1 shadow-sm sm:px-3">
             {tabBtn('all', 'Tudo')}
             {tabBtn('about', 'Sobre')}
-            {tabBtn('friends', 'Amigos')}
+            {tabBtn('dashboard', 'Painel')}
             {tabBtn('movies', 'Filmes')}
           </div>
         </div>
@@ -1154,34 +1131,9 @@ export default function NoctalProfile() {
           </div>
         )}
 
-        {profileTab === 'friends' && profileOwnerUid && (
-          <div className="mx-auto w-full max-w-4xl space-y-6 py-6 md:py-8">
-            <div className="grid gap-6 lg:grid-cols-2">
-              <UserListPanel
-                title="Seguidores"
-                description="Quem acompanha este perfil"
-                viewAllHref={`/u/${profileOwnerUid}/seguidores`}
-                count={followerRows.length}
-                isEmpty={followerRows.length === 0}
-                emptyTitle="Sem seguidores ainda"
-              >
-                {followerRows.map((r) => (
-                  <UserListCard key={r.id} uid={r.followerId} showChevron />
-                ))}
-              </UserListPanel>
-              <UserListPanel
-                title="Seguindo"
-                description="Contas que este perfil segue"
-                viewAllHref={`/u/${profileOwnerUid}/seguindo`}
-                count={followingRows.length}
-                isEmpty={followingRows.length === 0}
-                emptyTitle={isOwnProfile ? 'Ainda não segues ninguém' : 'Ainda não segue ninguém'}
-              >
-                {followingRows.map((r) => (
-                  <UserListCard key={r.id} uid={r.followingId} showChevron />
-                ))}
-              </UserListPanel>
-            </div>
+        {profileTab === 'dashboard' && profileOwnerUid && (
+          <div className="mx-auto w-full max-w-3xl py-4 sm:py-6">
+            <ProfileDashboardPanel uid={profileOwnerUid} isOwner={isOwnProfile} />
           </div>
         )}
 
@@ -1647,6 +1599,7 @@ export default function NoctalProfile() {
             uid={authUser.uid}
             displayName={viewerCommentName}
             myInitials={viewerCommentInitials}
+            myAvatar={viewerNavAvatarSrc}
           />
           <ShareModal
             open={!!sharePost}

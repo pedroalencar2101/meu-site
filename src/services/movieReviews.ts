@@ -3,6 +3,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -174,6 +175,15 @@ export async function deleteMovieReview(tmdbId: number, uid: string): Promise<vo
     }
   }
   await deleteDoc(ref);
+}
+
+/** Procura um `tmdbId` associado a um `feedPostId` nas avaliações (útil para posts legados). */
+export async function getTmdbIdForFeedPost(feedPostId: string): Promise<number | null> {
+  const q = query(collection(db, COL), where('feedPostId', '==', feedPostId), limit(1));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const x = snap.docs[0].data();
+  return typeof x.tmdbId === 'number' ? x.tmdbId : null;
 }
 
 /** Média e contagem a partir da lista já carregada (até ao limite da query). */

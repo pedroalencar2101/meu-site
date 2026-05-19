@@ -53,3 +53,22 @@ export function getDayKey(ts: Timestamp | null): string {
   const d = ts.toDate();
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
+
+/** Formato compacto para comentários: "3s", "3 min", "3h", "3d", "2 sem" */
+export function formatCompactRelative(ts: Timestamp | null): string {
+  if (!ts) return '0s';
+  const now = new Date();
+  const date = ts.toDate();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+  const diffWeek = Math.floor(diffDay / 7);
+
+  if (diffSec < 60) return `${diffSec}s`;
+  if (diffMin < 60) return `${diffMin} min`;
+  if (diffHour < 24) return `${diffHour}h`;
+  if (diffDay < 7) return `${diffDay}d`;
+  return `${diffWeek} sem`;
+}

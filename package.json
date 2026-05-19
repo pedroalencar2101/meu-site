@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "backfill:tmdb:dry": "node ./scripts/backfill-tmdb.js --dry-run",
+    "backfill:tmdb": "node ./scripts/backfill-tmdb.js"
   },
   "dependencies": {
     "emoji-picker-react": "^4.19.1",
@@ -18,6 +20,7 @@
     "react-router-dom": "^7.15.0"
   },
   "devDependencies": {
+    "firebase-admin": "^11.10.0",
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.12.2",
     "@types/react": "^19.2.14",

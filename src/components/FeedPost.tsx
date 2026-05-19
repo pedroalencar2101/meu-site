@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { MoreHorizontal, MessageCircle, Share2, Trash2 } from 'lucide-react';
+import { MoreHorizontal, MessageCircle, Share2, Trash2, Heart } from 'lucide-react';
 import type { UiPost, ReactionType } from '../types/feed';
+import { getTmdbIdForFeedPost } from '../services/movieReviews';
+import ReactorsListModal from './ReactorsListModal';
 import { formatPostTime } from '../utils/formatPostTime';
 import { sharePostContent } from '../utils/sharePost';
 
@@ -16,13 +18,33 @@ type PostProps = {
 
 export default function FeedPost({ post, currentUserId, onReact, onOpenComments, onDelete, onOpenShareModal }: PostProps) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [reactionHover, setReactionHover] = useState(false);
+  const [movieTmdbId, setMovieTmdbId] = useState<number | undefined>(post.movie?.tmdbId ?? undefined);
+  const [pulsing, setPulsing] = useState(false);
+  const [showReactors, setShowReactors] = useState(false);
 
   const isMine = currentUserId === post.authorId;
   const profilePath = currentUserId === post.authorId ? '/profile' : `/u/${post.authorId}`;
 
-  const hasReactions = post.likeCount > 0 || post.loveCount > 0 || post.smileCount > 0 || post.angryCount > 0;
   const totalReactions = post.likeCount + post.loveCount + post.smileCount + post.angryCount;
+
+  useEffect(() => {
+    let mounted = true;
+    async function resolveTmdb() {
+      if (!post.movie) return;
+      if (post.movie.tmdbId) {
+        if (mounted) setMovieTmdbId(post.movie.tmdbId);
+        return;
+      }
+      try {
+        const id = await getTmdbIdForFeedPost(post.id);
+        if (mounted && id) setMovieTmdbId(id);
+      } catch {
+        // ignore
+      }
+    }
+    resolveTmdb();
+    return () => { mounted = false; };
+  }, [post.movie, post.id]);
 
   return (
     <article className="relative mb-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -82,100 +104,108 @@ export default function FeedPost({ post, currentUserId, onReact, onOpenComments,
       <p className="mb-3 whitespace-pre-wrap text-[15px] leading-relaxed text-slate-800">{post.content}</p>
 
       {post.movie && (
-        <div className="mb-4 flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm sm:flex-row sm:items-stretch">
-          <img
-            src={post.movie.poster}
-            alt={post.movie.title}
-            referrerPolicy="no-referrer"
-            className="mx-auto h-[108px] w-[72px] shrink-0 rounded-lg object-cover shadow-sm ring-1 ring-black/10 sm:mx-0"
-          />
-          <div className="flex min-w-0 flex-1 flex-col justify-center text-center sm:text-left">
-            <h4 className="text-base font-black text-slate-900">{post.movie.title}</h4>
-            <p className="mb-2 text-[13px] font-medium text-slate-500">
-              {post.movie.year} • {post.movie.genre}
-            </p>
-            <div className="flex items-center justify-center gap-0.5 text-amber-400 sm:justify-start">
-              {[...Array(5)].map((_, i) => (
-                <svg
-                  key={i}
-                  className={`h-4 w-4 ${i < post.movie!.rating ? 'fill-current' : 'text-slate-300'}`}
-                  viewBox="0 0 20 20"
-                >
-                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                </svg>
-              ))}
+        (movieTmdbId ?? post.movie.tmdbId) ? (
+          <Link
+            to={`/em-cartaz/filme/${movieTmdbId ?? post.movie.tmdbId}`}
+            className="mb-4 flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm sm:flex-row sm:items-stretch hover:shadow-md"
+          >
+            <img
+              src={post.movie.poster}
+              alt={post.movie.title}
+              referrerPolicy="no-referrer"
+              className="mx-auto h-[108px] w-[72px] shrink-0 rounded-lg object-cover shadow-sm ring-1 ring-black/10 sm:mx-0"
+            />
+            <div className="flex min-w-0 flex-1 flex-col justify-center text-center sm:text-left">
+              <h4 className="text-base font-black text-slate-900">{post.movie.title}</h4>
+              <p className="mb-2 text-[13px] font-medium text-slate-500">
+                {post.movie.year} • {post.movie.genre}
+              </p>
+              <div className="flex items-center justify-center gap-0.5 text-amber-400 sm:justify-start">
+                {[...Array(5)].map((_, i) => (
+                  <svg
+                    key={i}
+                    className={`h-4 w-4 ${i < post.movie!.rating ? 'fill-current' : 'text-slate-300'}`}
+                    viewBox="0 0 20 20"
+                  >
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  </svg>
+                ))}
+              </div>
+            </div>
+          </Link>
+        ) : (
+          <div className="mb-4 flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm sm:flex-row sm:items-stretch">
+            <img
+              src={post.movie.poster}
+              alt={post.movie.title}
+              referrerPolicy="no-referrer"
+              className="mx-auto h-[108px] w-[72px] shrink-0 rounded-lg object-cover shadow-sm ring-1 ring-black/10 sm:mx-0"
+            />
+            <div className="flex min-w-0 flex-1 flex-col justify-center text-center sm:text-left">
+              <h4 className="text-base font-black text-slate-900">{post.movie.title}</h4>
+              <p className="mb-2 text-[13px] font-medium text-slate-500">
+                {post.movie.year} • {post.movie.genre}
+              </p>
+              <div className="flex items-center justify-center gap-0.5 text-amber-400 sm:justify-start">
+                {[...Array(5)].map((_, i) => (
+                  <svg
+                    key={i}
+                    className={`h-4 w-4 ${i < post.movie!.rating ? 'fill-current' : 'text-slate-300'}`}
+                    viewBox="0 0 20 20"
+                  >
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  </svg>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+        )
       )}
 
-      {(hasReactions || post.commentCount > 0) && (
-        <div className="mb-2 flex items-center justify-between border-b border-slate-100 px-1 pb-3 text-[13px] font-medium text-slate-500">
-          <div className="flex items-center gap-1.5">
-            {hasReactions && (
-              <div className="flex -space-x-1">
-                {post.likeCount > 0 && <div className="z-40 flex h-[22px] w-[22px] items-center justify-center rounded-full ring-2 ring-white text-[13px] leading-none shadow-sm bg-slate-100">👍</div>}
-                {post.loveCount > 0 && <div className="z-30 flex h-[22px] w-[22px] items-center justify-center rounded-full ring-2 ring-white text-[13px] leading-none shadow-sm bg-slate-100">❤️</div>}
-                {post.smileCount > 0 && <div className="z-20 flex h-[22px] w-[22px] items-center justify-center rounded-full ring-2 ring-white text-[13px] leading-none shadow-sm bg-slate-100">😂</div>}
-                {post.angryCount > 0 && <div className="z-10 flex h-[22px] w-[22px] items-center justify-center rounded-full ring-2 ring-white text-[13px] leading-none shadow-sm bg-slate-100">😡</div>}
-              </div>
-            )}
-            {totalReactions > 0 && <span className="ml-1">{totalReactions}</span>}
-          </div>
-          {post.commentCount > 0 && (
-            <button onClick={() => onOpenComments(post.id)} className="hover:underline">
-              {post.commentCount} {post.commentCount === 1 ? 'comentário' : 'comentários'}
+      <div className="flex items-center border-t border-slate-100 pt-1">
+        <div className="flex flex-1 items-center justify-center">
+          <button
+            onClick={() => {
+              onReact(post.id, 'like');
+              setPulsing(true);
+              setTimeout(() => setPulsing(false), 420);
+            }}
+            className={`flex items-center justify-center gap-1 h-10 rounded-l-lg text-[13px] font-bold transition-colors hover:bg-slate-50 px-2 ${
+              post.myReaction === 'like' ? 'text-rose-500' : 'text-slate-600'
+            }`}
+            aria-label="Curtir"
+          >
+            <Heart className={`h-[18px] w-[18px] ${pulsing ? 'animate-heart-pulse scale-[1.15]' : ''} ${post.myReaction === 'like' ? 'fill-rose-500 text-rose-500' : ''}`} />
+          </button>
+          {totalReactions > 0 && (
+            <button
+              onClick={() => setShowReactors(true)}
+              className="flex items-center h-10 rounded-r-lg text-[13px] font-bold text-slate-600 transition-colors hover:bg-slate-50 pr-2"
+              aria-label="Ver quem curtiu"
+            >
+              <span className="tabular-nums">{totalReactions}</span>
             </button>
           )}
         </div>
-      )}
 
-      <div className="flex flex-wrap justify-between gap-1 pt-1 sm:flex-nowrap">
-        {/* React Button with Hover Modal */}
-        <div 
-          className="relative flex-1 sm:flex-none sm:min-w-[120px]"
-          onMouseEnter={() => setReactionHover(true)}
-          onMouseLeave={() => setReactionHover(false)}
-        >
-          {reactionHover && (
-            <div className="absolute bottom-full left-0 z-30 pb-2">
-              <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-2 shadow-xl animate-in fade-in slide-in-from-bottom-2">
-                <button onClick={() => { onReact(post.id, 'like'); setReactionHover(false); }} className="flex h-9 w-9 items-center justify-center rounded-full text-2xl transition hover:scale-125 hover:bg-slate-50" title="Curtir">👍</button>
-                <button onClick={() => { onReact(post.id, 'love'); setReactionHover(false); }} className="flex h-9 w-9 items-center justify-center rounded-full text-2xl transition hover:scale-125 hover:bg-slate-50" title="Amei">❤️</button>
-                <button onClick={() => { onReact(post.id, 'smile'); setReactionHover(false); }} className="flex h-9 w-9 items-center justify-center rounded-full text-2xl transition hover:scale-125 hover:bg-slate-50" title="Haha">😂</button>
-                <button onClick={() => { onReact(post.id, 'angry'); setReactionHover(false); }} className="flex h-9 w-9 items-center justify-center rounded-full text-2xl transition hover:scale-125 hover:bg-slate-50" title="Irritado">😡</button>
-              </div>
-            </div>
-          )}
+        <div className="flex flex-1 items-center justify-center">
           <button
-            onClick={() => onReact(post.id, post.myReaction ? post.myReaction : 'like')}
-            className={`flex w-full min-h-[2.75rem] items-center justify-center gap-1.5 rounded-lg py-2 text-[14px] font-bold transition-colors hover:bg-slate-50 ${
-              post.myReaction === 'like' ? 'text-blue-600' : 
-              post.myReaction === 'love' ? 'text-red-600' :
-              post.myReaction === 'smile' ? 'text-amber-600' : 
-              post.myReaction === 'angry' ? 'text-orange-600' : 'text-slate-600'
-            }`}
+            onClick={() => onOpenComments(post.id)}
+            className="flex items-center justify-center gap-1 h-10 rounded-l-lg text-[13px] font-bold text-slate-600 transition-colors hover:bg-slate-50 px-2"
+            aria-label="Comentar"
           >
-            {post.myReaction === 'like' ? <span className="text-lg leading-none">👍</span> :
-             post.myReaction === 'love' ? <span className="text-lg leading-none">❤️</span> :
-             post.myReaction === 'smile' ? <span className="text-lg leading-none">😂</span> :
-             post.myReaction === 'angry' ? <span className="text-lg leading-none">😡</span> :
-             <span className="text-lg leading-none opacity-60">👍</span>}
-            <span>
-              {post.myReaction === 'like' ? 'Curtido' :
-               post.myReaction === 'love' ? 'Amei' :
-               post.myReaction === 'smile' ? 'Haha' : 
-               post.myReaction === 'angry' ? 'Irritado' : 'Curtir'}
-            </span>
+            <MessageCircle className="h-[18px] w-[18px]" />
           </button>
+          {post.commentCount > 0 && (
+            <button
+              onClick={() => onOpenComments(post.id)}
+              className="flex items-center h-10 rounded-r-lg text-[13px] font-bold text-slate-600 transition-colors hover:bg-slate-50 pr-2"
+              aria-label="Ver comentários"
+            >
+              <span className="tabular-nums">{post.commentCount}</span>
+            </button>
+          )}
         </div>
-
-        <button
-          onClick={() => onOpenComments(post.id)}
-          className="flex min-h-[2.75rem] flex-1 items-center justify-center gap-2 rounded-lg py-2 text-[14px] font-bold text-slate-600 transition-colors hover:bg-slate-50 sm:flex-none sm:min-w-[120px]"
-        >
-          <MessageCircle className="h-5 w-5" /> <span>Comentar</span>
-        </button>
 
         <button
           onClick={() => {
@@ -185,11 +215,14 @@ export default function FeedPost({ post, currentUserId, onReact, onOpenComments,
               void sharePostContent(post.content);
             }
           }}
-          className="flex min-h-[2.75rem] flex-1 items-center justify-center gap-2 rounded-lg py-2 text-[14px] font-bold text-slate-600 transition-colors hover:bg-slate-50 sm:flex-none sm:min-w-[120px]"
+          className="flex flex-1 items-center justify-center h-10 rounded-lg text-slate-600 transition-colors hover:bg-slate-50"
+          aria-label="Compartilhar"
         >
-          <Share2 className="h-5 w-5" /> <span className="hidden sm:inline">Compartilhar</span>
+          <Share2 className="h-[18px] w-[18px]" />
         </button>
       </div>
+
+      <ReactorsListModal open={showReactors} onClose={() => setShowReactors(false)} postId={post.id} currentUserId={currentUserId} title="Curtidas" />
     </article>
   );
 }

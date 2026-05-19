@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Film, Home, List, UserRoundSearch, Users } from 'lucide-react';
+import { Film, Home, List, Users } from 'lucide-react';
 
 function Item({
   to,
@@ -52,7 +52,6 @@ export default function MobileBottomNav() {
         />
         <Item to="/em-cartaz" label="Filmes" icon={<Film />} active={pathname.startsWith('/em-cartaz')} />
         <Item to="/profile" label="Perfil" icon={<Users />} active={pathname === '/profile'} />
-        <Item to="/explorar" label="Pessoas" icon={<UserRoundSearch />} active={pathname.startsWith('/explorar')} />
       </div>
     </nav>
   );

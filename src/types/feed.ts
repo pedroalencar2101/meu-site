@@ -8,6 +8,7 @@ export interface MovieEmbed {
   genre: string;
   poster: string;
   rating: number;
+  tmdbId?: number;
 }
 
 export interface FirestorePost {

@@ -7,6 +7,7 @@ import {
   getDocs,
   increment,
   limit,
+  startAfter,
   onSnapshot,
   orderBy,
   query,
@@ -360,6 +361,75 @@ export async function toggleCommentReaction(
   });
 }
 
+/** Busca os utilizadores que reagiram a um post (inclui tipo). */
+export async function fetchReactorsForPost(postId: string): Promise<Array<{ uid: string; type: string }>> {
+  const col = collection(db, POSTS, postId, 'reactions');
+  const snap = await getDocs(col);
+  return snap.docs.map((d) => ({ uid: d.id, type: (d.data().type as string) ?? 'like' }));
+}
+
+/** Paginated reactors for a post. Order by __name__ (uid). */
+export async function fetchReactorsForPostPage(postId: string, pageSize = 30, startAfterUid?: string): Promise<{ items: Array<{ uid: string; type: string }>; lastCursor?: string; hasMore: boolean }> {
+  let q = query(collection(db, POSTS, postId, 'reactions'), orderBy('__name__'), limit(pageSize));
+  if (startAfterUid) q = query(collection(db, POSTS, postId, 'reactions'), orderBy('__name__'), startAfter(startAfterUid), limit(pageSize));
+  const snap = await getDocs(q);
+  const items = snap.docs.map((d) => ({ uid: d.id, type: (d.data().type as string) ?? 'like' }));
+  const lastCursor = snap.docs.length ? snap.docs[snap.docs.length - 1].id : undefined;
+  const hasMore = snap.docs.length === pageSize;
+  return { items, lastCursor, hasMore };
+}
+
+export async function fetchReactorsByUids(postId: string, uids: string[]): Promise<Array<{ uid: string; type: string }>> {
+  if (!uids || uids.length === 0) return [];
+  const results: Array<{ uid: string; type: string }> = [];
+  await Promise.all(
+    uids.map(async (uid) => {
+      try {
+        const r = await getDoc(doc(reactionsCol(postId), uid));
+        if (r.exists()) {
+          results.push({ uid, type: (r.data().type as string) ?? 'like' });
+        }
+      } catch {
+        // ignore
+      }
+    })
+  );
+  return results;
+}
+
+/** Busca os utilizadores que reagiram a um comentário (inclui tipo). */
+export async function fetchReactorsForComment(postId: string, commentId: string): Promise<Array<{ uid: string; type: string }>> {
+  const col = collection(db, POSTS, postId, 'comments', commentId, 'reactions');
+  const snap = await getDocs(col);
+  return snap.docs.map((d) => ({ uid: d.id, type: (d.data().type as string) ?? 'like' }));
+}
+
+export async function fetchReactorsForCommentPage(postId: string, commentId: string, pageSize = 30, startAfterUid?: string): Promise<{ items: Array<{ uid: string; type: string }>; lastCursor?: string; hasMore: boolean }> {
+  let q = query(collection(db, POSTS, postId, 'comments', commentId, 'reactions'), orderBy('__name__'), limit(pageSize));
+  if (startAfterUid) q = query(collection(db, POSTS, postId, 'comments', commentId, 'reactions'), orderBy('__name__'), startAfter(startAfterUid), limit(pageSize));
+  const snap = await getDocs(q);
+  const items = snap.docs.map((d) => ({ uid: d.id, type: (d.data().type as string) ?? 'like' }));
+  const lastCursor = snap.docs.length ? snap.docs[snap.docs.length - 1].id : undefined;
+  const hasMore = snap.docs.length === pageSize;
+  return { items, lastCursor, hasMore };
+}
+
+export async function fetchReactorsForCommentByUids(postId: string, commentId: string, uids: string[]): Promise<Array<{ uid: string; type: string }>> {
+  if (!uids || uids.length === 0) return [];
+  const results: Array<{ uid: string; type: string }> = [];
+  await Promise.all(
+    uids.map(async (uid) => {
+      try {
+        const r = await getDoc(doc(commentReactionsCol(postId, commentId), uid));
+        if (r.exists()) results.push({ uid, type: (r.data().type as string) ?? 'like' });
+      } catch {
+        // ignore
+      }
+    })
+  );
+  return results;
+}
+
 export async function fetchMyCommentReactions(
   postId: string,
   commentIds: string[],
@@ -417,11 +487,9 @@ export async function deletePost(postId: string, uid: string): Promise<void> {
 
   await deleteCollectionRecursive(reactionsCol(postId));
 
-  let moreComments = true;
-  while (moreComments) {
+  while (true) {
     const snap = await getDocs(query(commentsCol(postId), limit(80)));
     if (snap.empty) {
-      moreComments = false;
       break;
     }
     for (const cd of snap.docs) {

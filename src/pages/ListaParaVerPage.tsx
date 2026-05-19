@@ -215,7 +215,7 @@ function GenreSection({
   onMarkWatched?: (tmdbId: number) => void;
   onRemove: (tmdbId: number) => void;
 }) {
-  const [expanded, setExpanded] = useState(movies.length <= 6);
+  const [expanded, setExpanded] = useState(true);
   const color = genreColor(title);
   const dotColor = color.split(' ')[0];
 

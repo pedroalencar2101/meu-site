@@ -112,3 +112,10 @@ export function subscribeFollowingOf(
     }
   );
 }
+
+/** IDs dos utilizadores que `followerId` segue (one-shot). */
+export async function getFollowingIds(followerId: string): Promise<string[]> {
+  const q = query(collection(db, COL), where('followerId', '==', followerId));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => (d.data() as { followingId: string }).followingId);
+}

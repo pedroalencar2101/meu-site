@@ -175,6 +175,7 @@ export default function NoctalFeed() {
         : `⭐ ${reviewStars}/5 — ${selectedMovie.title}`;
 
       const postId = await handleCreatePost(reviewText, {
+        tmdbId: selectedMovie.id,
         title: selectedMovie.title,
         year: selectedMovie.year,
         genre: '',
@@ -361,7 +362,7 @@ export default function NoctalFeed() {
                       el.style.height = 'auto';
                       el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
                     }}
-                    placeholder={`Qual obra-prima você assistiu hoje, ${firstName(user)}?`}
+                    placeholder={`O que você assistiu hoje, ${firstName(user)}?`}
                     disabled={!user}
                     className="w-full resize-none rounded-2xl bg-[#f0f2f5] px-4 py-2.5 text-[15px] font-medium text-slate-700 outline-none transition-all duration-200 hover:bg-slate-200 focus:bg-white focus:ring-2 focus:ring-slate-300/50 disabled:opacity-50 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
                   />
@@ -461,6 +462,7 @@ export default function NoctalFeed() {
             uid={user.uid}
             displayName={composerDisplayName}
             myInitials={navAvatarInitials}
+            myAvatar={navAvatarSrc}
           />
           <ShareModal
             open={!!sharePost}
